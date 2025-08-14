@@ -8,6 +8,7 @@ This repository is a Python Discord bot template that anyone can use to start bu
 * [✉️-Invite Your Bot to Join a Server](#%EF%B8%8F-invite-your-bot-to-join-a-server)
 * [📩-How to download it](#-how-to-download-it)
 * [🚦-How to start](#-how-to-start)
+* [🚀-How to run the bot](#-how-to-run-the-bot)
 * [👩‍💻-Code in detail](#-code-in-detail)
 * [📖-Library Used](#-library-used)
 
@@ -72,13 +73,37 @@ git clone https://github.com/MrAdityaBhoyar/Python-Discord-Bot-Template.git
 ```
 pip install -r requirements.txt
 ```
+- Create a `.env` file in the project directory and add your bot token like this:
+```
+DISCORD_TOKEN=your-bot-token-here
+```
 - Now fill the important information in [main.py](https://github.com/MrAdityaBhoyar/Python-Discord-Bot-Template/blob/main/main.py)
 
 | Variable                  | What it is                                                            |
 | ------------------------- | ----------------------------------------------------------------------|
 | YOUR_BOT_PREFIX_HERE      | The prefix you want to use for normal commands                        |
-| YOUR_BOT_TOKEN_HERE       | The token of your bot                                                 | 
+| DISCORD_TOKEN             | The token of your bot (set in `.env` file)                            | 
 
+**Note:**  
+Discord.py v2.0 and above requires you to specify `intents` when creating your bot instance.  
+Add the following to your code before creating the bot:
+
+```python
+import discord
+intents = discord.Intents.default()
+intents.message_content = True  # Enable if you want to read message content
+client = commands.Bot(command_prefix=prefix, intents=intents)
+```
+
+## 🚀-How to run the bot
+
+After you have filled in your bot token and prefix in `main.py`, and installed the required dependencies, you can run the bot using:
+
+```
+python main.py
+```
+
+Make sure your terminal is in the project directory and your virtual environment (if used) is activated.
 
 ## 👩‍💻-Code in detail
 
@@ -170,6 +195,16 @@ async def nsfw(ctx):
 Many bot creators may want to add an NSFW command to their bots, but it is crucial to ensure that users are protected and that the content expires safely. To achieve this, the command should only be executed in an age-restricted channel.
 
 <img src =  "https://github.com/aadityabhoyar/python-discord-bot-template/blob/main/media/116.jpg">
+
+### Greet Command
+```
+@client.command(name="greet")
+async def greet(ctx):
+    display_name = ctx.author.display_name
+    username = ctx.author.name
+    await ctx.send(f"Hello, {display_name} (username: {username})! 👋")
+```
+This command will greet the user by their Discord display name and username.
 
 ## 📖-Library Used 
 - [discord.py](https://pypi.org/project/discord.py/)
