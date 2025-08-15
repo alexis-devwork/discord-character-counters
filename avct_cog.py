@@ -25,6 +25,7 @@ from utils import (
     PredefinedCounterEnum,
     add_predefined_counter,
     SessionLocal,
+    generate_counters_output,
 )
 
 class AvctCog(commands.Cog):
@@ -152,7 +153,7 @@ class AvctCog(commands.Cog):
             success, error = update_counter(character_id, counter, "temp", delta)
             counters = get_counters_for_character(character_id)
             if success:
-                msg = "\n".join([f"{c.counter}: {c.temp}/{c.perm}" for c in counters])
+                msg = generate_counters_output(counters, fully_unescape)
                 await interaction.response.send_message(
                     f"Temp for counter '{counter}' on character '{character}' changed by {delta}.\n"
                     f"Counters for character '{character}':\n{msg}", ephemeral=True)
@@ -172,7 +173,7 @@ class AvctCog(commands.Cog):
             success, error = update_counter(character_id, counter, "perm", delta)
             counters = get_counters_for_character(character_id)
             if success:
-                msg = "\n".join([f"{c.counter}: {c.temp}/{c.perm}" for c in counters])
+                msg = generate_counters_output(counters, fully_unescape)
                 await interaction.response.send_message(
                     f"Perm for counter '{counter}' on character '{character}' changed by {delta}.\n"
                     f"Counters for character '{character}':\n{msg}", ephemeral=True)
@@ -345,7 +346,11 @@ class AvctCog(commands.Cog):
                         ]
                         msg_lines.append("  " + ", ".join(props))
             msg = "\n".join(msg_lines)
-            await interaction.response.send_message(f"Debug info for all your characters and counters:\n{msg}", ephemeral=False)
+            # Use followup to avoid "Unknown interaction" if response already sent
+            if interaction.response.is_done():
+                await interaction.followup.send(f"Debug info for all your characters and counters:\n{msg}", ephemeral=False)
+            else:
+                await interaction.response.send_message(f"Debug info for all your characters and counters:\n{msg}", ephemeral=False)
 
         async def bedlam_counter_autocomplete(interaction: discord.Interaction, current: str):
             user_id = str(interaction.user.id)
@@ -380,8 +385,12 @@ class AvctCog(commands.Cog):
                 await interaction.response.send_message("Counter not found or not of type perm_is_maximum_bedlam.", ephemeral=True)
                 return
             new_bedlam = (target.bedlam or 0) + delta
+            # Do not allow bedlam below zero or above perm
             if new_bedlam < 0:
                 await interaction.response.send_message("Bedlam cannot be negative.", ephemeral=True)
+                return
+            if new_bedlam > target.perm:
+                await interaction.response.send_message(f"Bedlam cannot exceed perm ({target.perm}).", ephemeral=True)
                 return
             session = SessionLocal()
             db_counter = session.query(type(target)).filter_by(id=target.id).first()

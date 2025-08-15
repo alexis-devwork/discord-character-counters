@@ -62,8 +62,15 @@ class Counter(Base):
     character = relationship("UserCharacter", back_populates="counters")
 
     def generate_display(self, fully_unescape_func):
-        # Customize this as needed for different counter types
-        return f"{fully_unescape_func(self.counter)}: {self.temp}/{self.perm}"
+        base = f"{fully_unescape_func(self.counter)}: {self.temp}/{self.perm}"
+
+        if self.counter_type == CounterTypeEnum.perm_is_maximum_bedlam.value:
+            if not self.bedlam:
+                self.bedlam = 0
+            spent_pts = self.perm - self.temp
+            unspent_bedlam = self.bedlam - spent_pts if spent_pts < self.bedlam else 0
+            return f"{base} (bedlam: {unspent_bedlam}/{self.bedlam})"
+        return base
 
 class CounterFactory:
     @staticmethod

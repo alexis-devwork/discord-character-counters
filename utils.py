@@ -395,3 +395,20 @@ def add_predefined_counter(character_id: int, counter_type: str, perm: int, comm
     session.commit()
     session.close()
     return True, None
+
+def generate_counters_output(counters, fully_unescape_func):
+    from collections import defaultdict
+    grouped = defaultdict(list)
+    for c in counters:
+        grouped[c.category].append(c)
+    msg_lines = []
+    for cat in sorted(grouped.keys(), key=lambda x: x.lower()):
+        cat_title = f"**{cat.capitalize()}**"
+        msg_lines.append(cat_title)
+        # Alphabetize counters within each category
+        for c in sorted(grouped[cat], key=lambda x: x.counter.lower()):
+            line = c.generate_display(fully_unescape_func)
+            msg_lines.append(line)
+            if c.comment:
+                msg_lines.append(f"-# {fully_unescape_func(c.comment)}")
+    return "\n".join(msg_lines).strip()
