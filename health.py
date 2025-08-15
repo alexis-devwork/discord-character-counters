@@ -1,10 +1,5 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Enum, Text
-from sqlalchemy.orm import declarative_base
 import enum
 import json
-
-# Use the same Base as counter.py to ensure all tables are in the same metadata
-from counter import Base
 
 class HealthTypeEnum(enum.Enum):
     normal = "normal"
@@ -15,7 +10,6 @@ class DamageEnum(enum.Enum):
     Aggravated = "Aggravated"
     Bashing = "Bashing"
 
-# Replace HealthLevelEnum with a dict
 HEALTH_LEVELS = {
     "Bruised": 0,
     "Hurt": -1,
@@ -26,32 +20,22 @@ HEALTH_LEVELS = {
     "Incapacitated": -999,
 }
 
-class Health(Base):
-    __tablename__ = "health"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    character_id = Column(Integer, ForeignKey("user_characters.id"), nullable=False)
-    health_type = Column(Enum(HealthTypeEnum), nullable=False)
-    damage = Column(Text, nullable=False)  # Store as JSON string
-    health_levels = Column(Text, nullable=False)  # Store as JSON string
-
-    def __init__(self, character, health_type):
-        self.character_id = character.id
+class Health:
+    def __init__(self, health_type, damage=None, health_levels=None):
         self.health_type = health_type
-        self.damage = json.dumps([])
+        self.damage = damage if damage is not None else []
         # Add all health level names in definition order
-        names = list(HEALTH_LEVELS.keys())
-        self.health_levels = json.dumps(names)
+        if health_levels is None:
+            self.health_levels = list(HEALTH_LEVELS.keys())
+        else:
+            self.health_levels = health_levels
 
     def set_health_levels(self, levels):
-        # Accepts a list of names, stores as names
-        names = []
-        for hl in levels:
-            names.append(hl)
-        self.health_levels = json.dumps(names)
+        self.health_levels = [hl for hl in levels]
 
     def add_damage(self, levels: int, damage_type: DamageEnum):
-        damage_list = json.loads(self.damage)
-        total_levels = len(json.loads(self.health_levels))
+        damage_list = self.damage
+        total_levels = len(self.health_levels)
         message = None
         available_slots = total_levels - len(damage_list)
         to_add = min(levels, available_slots)
@@ -72,18 +56,18 @@ class Health(Base):
             not_taken = remaining - converted
             if not_taken > 0:
                 message = f"{not_taken} additional levels of {damage_type.value} damage could not be taken (no room left in health track)."
-        self.damage = json.dumps(damage_list)
+        self.damage = damage_list
         return message
 
     def remove_damage(self, levels: int):
-        damage_list = json.loads(self.damage)
+        damage_list = self.damage
         if levels > 0:
             damage_list = damage_list[:-levels] if levels <= len(damage_list) else []
-        self.damage = json.dumps(damage_list)
+        self.damage = damage_list
 
     def map_damage_to_health(self):
-        health_levels_list = json.loads(self.health_levels)
-        damage_list = json.loads(self.damage)
+        health_levels_list = self.health_levels
+        damage_list = self.damage
         result = []
         for idx, hl_name in enumerate(health_levels_list):
             penalty = HEALTH_LEVELS[hl_name]
@@ -109,6 +93,3 @@ class Health(Base):
             penalty_str = f" ({penalty})" if penalty != 0 and penalty != -999 else ""
             lines.append(f"{symbol} {entry['health_level']}{penalty_str}")
         return "\n".join(lines)
-
-# Add this relationship to UserCharacter in counter.py:
-# health_entries = relationship("Health", back_populates="character", cascade="all, delete-orphan")
