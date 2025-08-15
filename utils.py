@@ -419,13 +419,28 @@ def generate_counters_output(counters, fully_unescape_func):
     for c in counters:
         grouped[c.category].append(c)
     msg_lines = []
-    for cat in sorted(grouped.keys(), key=lambda x: x.lower()):
-        cat_title = f"**{cat.capitalize()}**"
-        msg_lines.append(cat_title)
-        # Alphabetize counters within each category
-        for c in sorted(grouped[cat], key=lambda x: x.counter.lower()):
-            line = c.generate_display(fully_unescape_func)
-            msg_lines.append(line)
-            if c.comment:
-                msg_lines.append(f"-# {fully_unescape_func(c.comment)}")
+    # Use CategoryEnum order for display, do not sort alphabetically
+    category_order = [c.value for c in CategoryEnum]
+    shown = set()
+    for cat in category_order:
+        if cat in grouped:
+            cat_title = f"**{cat.capitalize()}**"
+            msg_lines.append(cat_title)
+            # Alphabetize counters within each category
+            for c in sorted(grouped[cat], key=lambda x: x.counter.lower()):
+                line = c.generate_display(fully_unescape_func)
+                msg_lines.append(line)
+                if c.comment:
+                    msg_lines.append(f"-# {fully_unescape_func(c.comment)}")
+            shown.add(cat)
+    # Add any remaining categories not in the enum order, sorted alphabetically
+    for cat in grouped.keys():
+        if cat not in shown:
+            cat_title = f"**{cat.capitalize()}**"
+            msg_lines.append(cat_title)
+            for c in sorted(grouped[cat], key=lambda x: x.counter.lower()):
+                line = c.generate_display(fully_unescape_func)
+                msg_lines.append(line)
+                if c.comment:
+                    msg_lines.append(f"-# {fully_unescape_func(c.comment)}")
     return "\n".join(msg_lines).strip()

@@ -40,13 +40,14 @@ class PredefinedCounterEnum(enum.Enum):
 
 
 class CategoryEnum(enum.Enum):
-    general = "general"
     tempers = "tempers"
-    xp = "xp"
+    reknown = "reknown"
+    general = "general"
+    health = "health"
     items = "items"
-    projects = "projects"
     other = "other"
-    reknown = "reknown"  # Added new category
+    projects = "projects"
+    xp = "xp"
 
 class Counter(Base):
     __tablename__ = "counters"
@@ -77,6 +78,12 @@ class CounterFactory:
     def create(counter_type: PredefinedCounterEnum, character, perm, comment=None, override_name=None):
         name = override_name if override_name else counter_type.value
         match counter_type:
+            case PredefinedCounterEnum.glory:
+                return CounterFactory.create_glory(character, perm, comment, name)
+            case PredefinedCounterEnum.honor:
+                return CounterFactory.create_honor(character, perm, comment, name)
+            case PredefinedCounterEnum.wisdom:
+                return CounterFactory.create_wisdom(character, perm, comment, name)
             case PredefinedCounterEnum.willpower:
                 return CounterFactory.create_willpower(character, perm, comment, name)
             case PredefinedCounterEnum.mana:
@@ -84,19 +91,14 @@ class CounterFactory:
             case PredefinedCounterEnum.blood_pool:
                 return CounterFactory.create_blood_pool(character, perm, comment, name)
             case PredefinedCounterEnum.willpower_fae:
-                return CounterFactory.create_willpower_fae(character, perm, comment, name)
+                # Always use "willpower" as the name for willpower_fae
+                return CounterFactory.create_willpower_fae(character, perm, comment, "willpower")
             case PredefinedCounterEnum.glamour:
                 return CounterFactory.create_glamour(character, perm, comment, name)
             case PredefinedCounterEnum.nightmare:
                 return CounterFactory.create_nightmare(character, comment, name)
             case PredefinedCounterEnum.banality:
                 return CounterFactory.create_banality(character, perm, comment, name)
-            case PredefinedCounterEnum.glory:
-                return CounterFactory.create_glory(character, perm, comment, name)
-            case PredefinedCounterEnum.honor:
-                return CounterFactory.create_honor(character, perm, comment, name)
-            case PredefinedCounterEnum.wisdom:
-                return CounterFactory.create_wisdom(character, perm, comment, name)
             case PredefinedCounterEnum.rage:
                 return CounterFactory.create_rage(character, perm, comment, name)
             case PredefinedCounterEnum.gnosis:
@@ -146,8 +148,9 @@ class CounterFactory:
 
     @staticmethod
     def create_willpower_fae(character, perm, comment=None, name=None):
+        # Always use "willpower" as the display name
         return Counter(
-            counter="willpower" if not name else name,
+            counter="willpower",
             temp=perm,
             perm=perm,
             bedlam=0,
