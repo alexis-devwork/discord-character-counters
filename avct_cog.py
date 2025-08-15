@@ -22,6 +22,10 @@ from utils import (
     validate_length,
     rename_character,
     rename_counter,
+    PredefinedCounterEnum,
+    add_predefined_counter,
+    SessionLocal,
+    generate_counters_output,
 )
 
 class AvctCog(commands.Cog):
@@ -54,63 +58,40 @@ class AvctCog(commands.Cog):
             else:
                 await interaction.response.send_message(error, ephemeral=True)
 
-        @self.add_group.command(name="counter", description="Add a counter to a character")
-        @app_commands.autocomplete(character=character_name_autocomplete, category=category_autocomplete)
+        async def predefined_counter_type_autocomplete(interaction: discord.Interaction, current: str):
+            return [
+                discord.app_commands.Choice(name=ct.value.title(), value=ct.value)
+                for ct in PredefinedCounterEnum
+                if current.lower() in ct.value.lower()
+            ][:25]
+
+        @self.add_group.command(name="counter", description="Add a predefined counter to a character")
+        @app_commands.autocomplete(character=character_name_autocomplete, counter_type=predefined_counter_type_autocomplete)
         async def add_counter_cmd(
             interaction: discord.Interaction,
             character: str,
-            counter: str,
-            temp: int,
-            perm: int,
-            category: str,
+            counter_type: str,
+            starting: int,
             comment: str = None
         ):
             character = sanitize_string(character)
-            counter = sanitize_string(counter)
-            category = sanitize_string(category)
-            comment = sanitize_string(comment)
             user_id = str(interaction.user.id)
             character_id = get_character_id_by_user_and_name(user_id, character)
             if character_id is None:
                 await interaction.response.send_message("Character not found for this user.", ephemeral=True)
                 return
-            if category not in [c.value for c in CategoryEnum]:
-                await interaction.response.send_message("Invalid category selected.", ephemeral=True)
-                return
-            success, error = add_counter(character_id, counter, temp, perm, category, comment)
-            if success:
-                await interaction.response.send_message(
-                    f"Counter '{counter}' (category: {category}) added to character '{character}'.", ephemeral=True)
-            else:
-                await interaction.response.send_message(error or "Failed to add counter.", ephemeral=True)
 
-        @self.add_group.command(name="customcounter", description="Add a custom counter to a character")
-        @app_commands.autocomplete(character=character_name_autocomplete, category=category_autocomplete)
-        async def add_custom_counter_cmd(
-            interaction: discord.Interaction,
-            character: str,
-            counter: str,
-            temp: int,
-            perm: int,
-            category: str,
-            comment: str = None
-        ):
-            character = sanitize_string(character)
-            counter = sanitize_string(counter)
-            category = sanitize_string(category)
-            comment = sanitize_string(comment)
-            user_id = str(interaction.user.id)
-            character_id = get_character_id_by_user_and_name(user_id, character)
-            if character_id is None:
-                await interaction.response.send_message("Character not found for this user.", ephemeral=True)
+            try:
+                counter_enum = PredefinedCounterEnum(counter_type)
+            except ValueError:
+                await interaction.response.send_message("Invalid counter type selected.", ephemeral=True)
                 return
-            if category not in [c.value for c in CategoryEnum]:
-                await interaction.response.send_message("Invalid category selected.", ephemeral=True)
-                return
-            success, error = add_counter(character_id, counter, temp, perm, category, comment)
+
+            # Pass the string value, not the Enum, to add_predefined_counter
+            success, error = add_predefined_counter(character_id, counter_enum.value, starting, comment)
             if success:
                 await interaction.response.send_message(
-                    f"Counter '{counter}' (category: {category}) added to character '{character}'.", ephemeral=True)
+                    f"{counter_type.title()} counter added to character '{character}'.", ephemeral=True)
             else:
                 await interaction.response.send_message(error or "Failed to add counter.", ephemeral=True)
 
@@ -151,7 +132,7 @@ class AvctCog(commands.Cog):
                 cat_title = f"**{cat.capitalize()}**"
                 msg_lines.append(cat_title)
                 for c in grouped[cat]:
-                    line = f"{fully_unescape(c.counter)}: {c.temp}/{c.perm}"
+                    line = c.generate_display(fully_unescape)
                     msg_lines.append(line)
                     if c.comment:
                         msg_lines.append(f"-# {fully_unescape(c.comment)}")
@@ -159,8 +140,25 @@ class AvctCog(commands.Cog):
             msg = "\n".join(msg_lines).strip()
             await interaction.response.send_message(f"Counters for character '{character}':\n{msg}", ephemeral=True)
 
+        async def counter_name_autocomplete_for_character(interaction: discord.Interaction, current: str):
+            user_id = str(interaction.user.id)
+            character = interaction.namespace.character
+            character_id = get_character_id_by_user_and_name(user_id, character)
+            if character_id is None:
+                return []
+            counters = get_counters_for_character(character_id)
+            filtered = [
+                c.counter for c in counters
+                if current.lower() in c.counter.lower()
+            ]
+            unique_counters = list(dict.fromkeys(filtered))
+            return [
+                discord.app_commands.Choice(name=name, value=name)
+                for name in unique_counters
+            ][:25]
+
         @self.character_group.command(name="temp", description="Change temp value for a counter")
-        @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete)
+        @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)
         async def temp(interaction: discord.Interaction, character: str, counter: str, delta: int):
             character = sanitize_string(character)
             counter = sanitize_string(counter)
@@ -172,7 +170,7 @@ class AvctCog(commands.Cog):
             success, error = update_counter(character_id, counter, "temp", delta)
             counters = get_counters_for_character(character_id)
             if success:
-                msg = "\n".join([f"{c.counter}: {c.temp}/{c.perm}" for c in counters])
+                msg = generate_counters_output(counters, fully_unescape)
                 await interaction.response.send_message(
                     f"Temp for counter '{counter}' on character '{character}' changed by {delta}.\n"
                     f"Counters for character '{character}':\n{msg}", ephemeral=True)
@@ -180,7 +178,7 @@ class AvctCog(commands.Cog):
                 await interaction.response.send_message(error or "Counter or character not found.", ephemeral=True)
 
         @self.character_group.command(name="perm", description="Change perm value for a counter")
-        @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete)
+        @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)
         async def perm(interaction: discord.Interaction, character: str, counter: str, delta: int):
             character = sanitize_string(character)
             counter = sanitize_string(counter)
@@ -192,7 +190,7 @@ class AvctCog(commands.Cog):
             success, error = update_counter(character_id, counter, "perm", delta)
             counters = get_counters_for_character(character_id)
             if success:
-                msg = "\n".join([f"{c.counter}: {c.temp}/{c.perm}" for c in counters])
+                msg = generate_counters_output(counters, fully_unescape)
                 await interaction.response.send_message(
                     f"Perm for counter '{counter}' on character '{character}' changed by {delta}.\n"
                     f"Counters for character '{character}':\n{msg}", ephemeral=True)
@@ -337,6 +335,89 @@ class AvctCog(commands.Cog):
                 await interaction.response.send_message(f"Counter '{old_name}' renamed to '{new_name}' for character '{character}'.", ephemeral=True)
             else:
                 await interaction.response.send_message(error, ephemeral=True)
+
+        @self.avct_group.command(name="debug", description="Show all properties of all counters for all your characters (visible to everyone)")
+        async def debug(interaction: discord.Interaction):
+            user_id = str(interaction.user.id)
+            entries = get_all_user_characters_for_user(user_id)
+            if not entries:
+                await interaction.response.send_message("No characters found.", ephemeral=False)
+                return
+            msg_lines = []
+            for char in entries:
+                msg_lines.append(f"Character: {char.character} (ID: {char.id})")
+                counters = char.counters
+                if not counters:
+                    msg_lines.append("  No counters.")
+                else:
+                    for c in counters:
+                        props = [
+                            f"counter={c.counter}",
+                            f"temp={c.temp}",
+                            f"perm={c.perm}",
+                            f"category={c.category}",
+                            f"comment={c.comment}",
+                            f"bedlam={c.bedlam}",
+                            f"counter_type={c.counter_type}",
+                            f"display={c.generate_display(fully_unescape)}"
+                        ]
+                        msg_lines.append("  " + ", ".join(props))
+            msg = "\n".join(msg_lines)
+            # Use followup to avoid "Unknown interaction" if response already sent
+            if interaction.response.is_done():
+                await interaction.followup.send(f"Debug info for all your characters and counters:\n{msg}", ephemeral=False)
+            else:
+                await interaction.response.send_message(f"Debug info for all your characters and counters:\n{msg}", ephemeral=False)
+
+        async def bedlam_counter_autocomplete(interaction: discord.Interaction, current: str):
+            user_id = str(interaction.user.id)
+            character = interaction.namespace.character
+            character_id = get_character_id_by_user_and_name(user_id, character)
+            if character_id is None:
+                return []
+            counters = get_counters_for_character(character_id)
+            filtered = [
+                c.counter for c in counters
+                if c.counter_type == "perm_is_maximum_bedlam" and current.lower() in c.counter.lower()
+            ]
+            unique_counters = list(dict.fromkeys(filtered))
+            return [
+                discord.app_commands.Choice(name=name, value=name)
+                for name in unique_counters
+            ][:25]
+
+        @self.character_group.command(name="bedlam", description="Increment or decrement bedlam for a counter (only perm_is_maximum_bedlam counters)")
+        @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=bedlam_counter_autocomplete)
+        async def bedlam(interaction: discord.Interaction, character: str, counter: str, delta: int):
+            character = sanitize_string(character)
+            counter = sanitize_string(counter)
+            user_id = str(interaction.user.id)
+            character_id = get_character_id_by_user_and_name(user_id, character)
+            if character_id is None:
+                await interaction.response.send_message("Character not found for this user.", ephemeral=True)
+                return
+            counters = get_counters_for_character(character_id)
+            target = next((c for c in counters if c.counter == counter and c.counter_type == "perm_is_maximum_bedlam"), None)
+            if not target:
+                await interaction.response.send_message("Counter not found or not of type perm_is_maximum_bedlam.", ephemeral=True)
+                return
+            new_bedlam = (target.bedlam or 0) + delta
+            # Do not allow bedlam below zero or above perm
+            if new_bedlam < 0:
+                await interaction.response.send_message("Bedlam cannot be negative.", ephemeral=True)
+                return
+            if new_bedlam > target.perm:
+                await interaction.response.send_message(f"Bedlam cannot exceed perm ({target.perm}).", ephemeral=True)
+                return
+            session = SessionLocal()
+            db_counter = session.query(type(target)).filter_by(id=target.id).first()
+            db_counter.bedlam = new_bedlam
+            session.commit()
+            session.close()
+            await interaction.response.send_message(
+                f"Bedlam for counter '{counter}' on character '{character}' changed by {delta}. New value: {new_bedlam}",
+                ephemeral=True
+            )
 
 async def setup(bot):
     await bot.add_cog(AvctCog(bot))
