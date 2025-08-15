@@ -239,6 +239,23 @@ async def counter_name_autocomplete(interaction: discord.Interaction, current: s
         for name in unique_counters
     ][:25]
 
+async def counter_name_autocomplete_for_character(interaction: discord.Interaction, current: str):
+    user_id = str(interaction.user.id)
+    character = interaction.namespace.character
+    character_id = get_character_id_by_user_and_name(user_id, character)
+    if character_id is None:
+        return []
+    counters = get_counters_for_character(character_id)
+    filtered = [
+        c.counter for c in counters
+        if current.lower() in c.counter.lower()
+    ]
+    unique_counters = list(dict.fromkeys(filtered))
+    return [
+        discord.app_commands.Choice(name=name, value=name)
+        for name in unique_counters
+    ][:25]
+
 def remove_character(user_id: str, character_name: str):
     # character_name is already sanitized from autocomplete, only validate length
     if character_name is None or not validate_length("character", character_name, MAX_FIELD_LENGTH):

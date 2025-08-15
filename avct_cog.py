@@ -140,8 +140,25 @@ class AvctCog(commands.Cog):
             msg = "\n".join(msg_lines).strip()
             await interaction.response.send_message(f"Counters for character '{character}':\n{msg}", ephemeral=True)
 
+        async def counter_name_autocomplete_for_character(interaction: discord.Interaction, current: str):
+            user_id = str(interaction.user.id)
+            character = interaction.namespace.character
+            character_id = get_character_id_by_user_and_name(user_id, character)
+            if character_id is None:
+                return []
+            counters = get_counters_for_character(character_id)
+            filtered = [
+                c.counter for c in counters
+                if current.lower() in c.counter.lower()
+            ]
+            unique_counters = list(dict.fromkeys(filtered))
+            return [
+                discord.app_commands.Choice(name=name, value=name)
+                for name in unique_counters
+            ][:25]
+
         @self.character_group.command(name="temp", description="Change temp value for a counter")
-        @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete)
+        @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)
         async def temp(interaction: discord.Interaction, character: str, counter: str, delta: int):
             character = sanitize_string(character)
             counter = sanitize_string(counter)
@@ -161,7 +178,7 @@ class AvctCog(commands.Cog):
                 await interaction.response.send_message(error or "Counter or character not found.", ephemeral=True)
 
         @self.character_group.command(name="perm", description="Change perm value for a counter")
-        @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete)
+        @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)
         async def perm(interaction: discord.Interaction, character: str, counter: str, delta: int):
             character = sanitize_string(character)
             counter = sanitize_string(counter)
