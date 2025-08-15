@@ -5,3 +5,4 @@ __pycache__
 .idea
 .idea/*
 .idea/copilotDiffState.xml
+db.sqlite3
