@@ -343,3 +343,50 @@ def fully_unescape(s: str) -> str:
         else:
             return chr(int(ent))
     return re.sub(r'&#(x[0-9A-Fa-f]+|\d+);', numeric_entity_replacer, s)
+
+def rename_character(user_id: str, old_name: str, new_name: str):
+    # old_name is already sanitized from autocomplete, only validate length
+    if not validate_length("character", old_name, MAX_FIELD_LENGTH):
+        return False, f"Old name must be at most {MAX_FIELD_LENGTH} characters."
+    try:
+        new_name = sanitize_and_validate("character", new_name, MAX_FIELD_LENGTH)
+    except ValueError as ve:
+        return False, str(ve)
+    session = SessionLocal()
+    # Check if new_name already exists for this user (after length validation)
+    existing = session.query(UserCharacter).filter_by(user=user_id, character=new_name).first()
+    if existing:
+        session.close()
+        return False, "A character with that name already exists for you."
+    char = session.query(UserCharacter).filter_by(user=user_id, character=old_name).first()
+    if not char:
+        session.close()
+        return False, "Character to rename not found."
+    char.character = new_name
+    session.commit()
+    session.close()
+    return True, None
+
+def rename_counter(character_id: int, old_name: str, new_name: str):
+    # old_name is already sanitized from autocomplete, only validate length
+    if not validate_length("counter", old_name, MAX_FIELD_LENGTH):
+        return False, f"Old name must be at most {MAX_FIELD_LENGTH} characters."
+    try:
+        new_name = sanitize_and_validate("counter", new_name, MAX_FIELD_LENGTH)
+    except ValueError as ve:
+        return False, str(ve)
+    session = SessionLocal()
+    # Check if new_name already exists for this character (after length validation)
+    existing = session.query(Counter).filter_by(character_id=character_id, counter=new_name).first()
+    if existing:
+        session.close()
+        return False, "A counter with that name already exists for this character."
+    counter_obj = session.query(Counter).filter_by(character_id=character_id, counter=old_name).first()
+    if not counter_obj:
+        session.close()
+        return False, "Counter to rename not found."
+    counter_obj.counter = new_name
+    session.commit()
+    session.close()
+    return True, None
+
