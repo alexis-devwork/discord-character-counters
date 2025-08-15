@@ -28,6 +28,9 @@ from utils import (
     generate_counters_output,
     splat_autocomplete,  # Make sure this is imported
 )
+from counter import UserCharacter
+from sqlalchemy.orm import joinedload  # <-- Add this import
+from health import Health, HealthTypeEnum
 
 class AvctCog(commands.Cog):
     def __init__(self, bot):
@@ -339,6 +342,16 @@ class AvctCog(commands.Cog):
                 return
 
             msg = generate_counters_output(counters, fully_unescape)
+
+            # Add health trackers to the bottom of the output
+            session = SessionLocal()
+            health_entries = session.query(Health).filter_by(character_id=character_id).all()
+            if health_entries:
+                msg += "\n\n**Health Trackers:**"
+                for h in health_entries:
+                    msg += f"\nHealth ({h.health_type.value}):\n{h.display()}"
+            session.close()
+
             await interaction.response.send_message(f"Counters for character '{character}':\n{msg}", ephemeral=True)
 
         async def counter_name_autocomplete_for_character(interaction: discord.Interaction, current: str):
@@ -735,8 +748,159 @@ class AvctCog(commands.Cog):
                     debug_lines.append(
                         f"  Counter: {c.counter} | temp: {c.temp} | perm: {c.perm} | type: {c.counter_type} | category: {c.category} | comment: {c.comment} | bedlam: {getattr(c, 'bedlam', None)}"
                     )
+                # Add health details for this character
+                health_entries = session.query(Health).filter_by(character_id=char.id).all()
+                for h in health_entries:
+                    debug_lines.append(f"  Health ({h.health_type.value}):")
+                    # Raw values
+                    import json
+                    raw_levels = json.loads(h.health_levels)
+                    debug_lines.append(f"    Raw health_levels: {raw_levels}")
+                    raw_damage = json.loads(h.damage)
+                    debug_lines.append(f"    Raw damage: {raw_damage}")
+                    # Formatted display
+                    debug_lines.append(h.display())
             session.close()
-            await interaction.response.send_message("\n".join(debug_lines) or "No data found.", ephemeral=False)
+            debug_text = "\n".join(debug_lines) or "No data found."
+            # Discord message limit is 2000 characters
+            if len(debug_text) > 2000:
+                chunks = [debug_text[i:i+1990] for i in range(0, len(debug_text), 1990)]
+                for idx, chunk in enumerate(chunks):
+                    if idx == 0:
+                        await interaction.response.send_message(chunk, ephemeral=False)
+                    else:
+                        await interaction.followup.send(chunk, ephemeral=False)
+            else:
+                await interaction.response.send_message(debug_text, ephemeral=False)
+
+        async def health_type_autocomplete(interaction: discord.Interaction, current: str):
+            return [
+                discord.app_commands.Choice(name=ht.value, value=ht.value)
+                for ht in HealthTypeEnum
+                if current.lower() in ht.value.lower()
+            ][:25]
+
+        async def damage_type_autocomplete(interaction: discord.Interaction, current: str):
+            from health import DamageEnum
+            return [
+                discord.app_commands.Choice(name=dt.value, value=dt.value)
+                for dt in DamageEnum
+                if current.lower() in dt.value.lower()
+            ][:25]
+
+        # Remove health tracker
+        @self.remove_group.command(name="health", description="Remove a health tracker from a character by type")
+        @discord.app_commands.autocomplete(character=character_name_autocomplete, health_type=health_type_autocomplete)
+        async def remove_health(
+            interaction: discord.Interaction,
+            character: str,
+            health_type: str
+        ):
+            character = sanitize_string(character)
+            user_id = str(interaction.user.id)
+            character_id = get_character_id_by_user_and_name(user_id, character)
+            if character_id is None:
+                await interaction.response.send_message("Character not found for this user.", ephemeral=True)
+                return
+            session = SessionLocal()
+            from health import HealthTypeEnum
+            try:
+                ht_enum = HealthTypeEnum(health_type)
+            except ValueError:
+                session.close()
+                await interaction.response.send_message("Invalid health type.", ephemeral=True)
+                return
+            health_obj = session.query(Health).filter_by(character_id=character_id, health_type=ht_enum).first()
+            if not health_obj:
+                session.close()
+                await interaction.response.send_message("Health tracker not found for this character and type.", ephemeral=True)
+                return
+            session.delete(health_obj)
+            session.commit()
+            session.close()
+            await interaction.response.send_message(
+                f"Health tracker ({health_type}) removed from character '{character}'.", ephemeral=True
+            )
+
+        # Add damage to health tracker
+        @self.avct_group.command(name="damage", description="Add damage to a health tracker")
+        @discord.app_commands.autocomplete(character=character_name_autocomplete, health_type=health_type_autocomplete, damage_type=damage_type_autocomplete)
+        async def damage(
+            interaction: discord.Interaction,
+            character: str,
+            health_type: str,
+            damage_type: str,
+            levels: int
+        ):
+            character = sanitize_string(character)
+            user_id = str(interaction.user.id)
+            character_id = get_character_id_by_user_and_name(user_id, character)
+            if character_id is None:
+                await interaction.response.send_message("Character not found for this user.", ephemeral=True)
+                return
+            session = SessionLocal()
+            from health import HealthTypeEnum, DamageEnum
+            try:
+                ht_enum = HealthTypeEnum(health_type)
+                dt_enum = DamageEnum(damage_type)
+            except ValueError:
+                session.close()
+                await interaction.response.send_message("Invalid health or damage type.", ephemeral=True)
+                return
+            health_obj = session.query(Health).filter_by(character_id=character_id, health_type=ht_enum).first()
+            if not health_obj:
+                session.close()
+                await interaction.response.send_message("Health tracker not found for this character and type.", ephemeral=True)
+                return
+            # Call add_damage while the instance is still attached to the session
+            msg = health_obj.add_damage(levels, dt_enum)
+            session.add(health_obj)  # Ensure changes are tracked
+            session.commit()
+            # Refresh the instance to get updated values
+            session.refresh(health_obj)
+            output = health_obj.display()
+            session.close()
+            if msg:
+                await interaction.response.send_message(f"{msg}\n{output}", ephemeral=True)
+            else:
+                await interaction.response.send_message(output, ephemeral=True)
+
+        # Heal damage from health tracker
+        @self.avct_group.command(name="heal", description="Heal damage from a health tracker")
+        @discord.app_commands.autocomplete(character=character_name_autocomplete, health_type=health_type_autocomplete)
+        async def heal(
+            interaction: discord.Interaction,
+            character: str,
+            health_type: str,
+            levels: int
+        ):
+            character = sanitize_string(character)
+            user_id = str(interaction.user.id)
+            character_id = get_character_id_by_user_and_name(user_id, character)
+            if character_id is None:
+                await interaction.response.send_message("Character not found for this user.", ephemeral=True)
+                return
+            session = SessionLocal()
+            from health import HealthTypeEnum
+            try:
+                ht_enum = HealthTypeEnum(health_type)
+            except ValueError:
+                session.close()
+                await interaction.response.send_message("Invalid health type.", ephemeral=True)
+                return
+            health_obj = session.query(Health).filter_by(character_id=character_id, health_type=ht_enum).first()
+            if not health_obj:
+                session.close()
+                await interaction.response.send_message("Health tracker not found for this character and type.", ephemeral=True)
+                return
+            # Call remove_damage while the instance is still attached to the session
+            health_obj.remove_damage(levels)
+            session.add(health_obj)  # Ensure changes are tracked
+            session.commit()
+            session.refresh(health_obj)  # Refresh to get updated values
+            output = health_obj.display()
+            session.close()
+            await interaction.response.send_message(output, ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(AvctCog(bot))
