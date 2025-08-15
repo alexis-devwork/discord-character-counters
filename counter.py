@@ -285,3 +285,9 @@ class CounterFactory:
 
 def create_all_tables(engine):
     Base.metadata.create_all(engine)
+
+class SplatEnum(enum.Enum):
+    sorc = "sorc"
+    changeling = "changeling"
+    vampire = "vampire"
+    fera = "fera"
