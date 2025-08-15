@@ -76,6 +76,7 @@ pip install -r requirements.txt
 - Create a `.env` file in the project directory and add your bot token like this:
 ```
 DISCORD_TOKEN=your-bot-token-here
+MAX_USER_CHARACTERS=10
 ```
 - Now fill the important information in [main.py](https://github.com/MrAdityaBhoyar/Python-Discord-Bot-Template/blob/main/main.py)
 
@@ -83,6 +84,7 @@ DISCORD_TOKEN=your-bot-token-here
 | ------------------------- | ----------------------------------------------------------------------|
 | YOUR_BOT_PREFIX_HERE      | The prefix you want to use for normal commands                        |
 | DISCORD_TOKEN             | The token of your bot (set in `.env` file)                            | 
+| MAX_USER_CHARACTERS       | Maximum number of characters a user can have (default: 10)            |
 
 **Note:**  
 Discord.py v2.0 and above requires you to specify `intents` when creating your bot instance.  

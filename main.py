@@ -7,6 +7,8 @@ from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
+MAX_USER_CHARACTERS = int(os.getenv("MAX_USER_CHARACTERS", "10"))  # Default to 10 if not set
+MAX_COUNTERS_PER_CHARACTER = int(os.getenv("MAX_COUNTERS_PER_CHARACTER", "20"))  # Default to 20 if not set
 
 intents = discord.Intents.default()
 intents.messages = True
@@ -37,10 +39,21 @@ SessionLocal = sessionmaker(bind=engine)
 
 def add_user_character(user_id: str, character: str):
     session = SessionLocal()
+    # Check if character already exists for this user
+    existing = session.query(UserCharacter).filter_by(user=user_id, character=character).first()
+    if existing:
+        session.close()
+        return False, "A character with that name already exists for you."
+    # Check character limit
+    count = session.query(UserCharacter).filter_by(user=user_id).count()
+    if count >= MAX_USER_CHARACTERS:
+        session.close()
+        return False, f"You have reached the maximum number of characters ({MAX_USER_CHARACTERS})."
     new_entry = UserCharacter(user=user_id, character=character)
     session.add(new_entry)
     session.commit()
     session.close()
+    return True, None
 
 def get_all_user_characters_for_user(user_id: str):
     session = SessionLocal()
@@ -53,29 +66,47 @@ def add_counter(character_id: int, counter_name: str, temp: int, perm: int):
     char = session.query(UserCharacter).filter_by(id=character_id).first()
     if not char:
         session.close()
-        return False
+        return False, "Character not found."
+    # Check if counter already exists for this character
+    existing = session.query(Counter).filter_by(character_id=character_id, counter=counter_name).first()
+    if existing:
+        session.close()
+        return False, "A counter with that name already exists for this character."
+    # Enforce maximum counters per character
+    count = session.query(Counter).filter_by(character_id=character_id).count()
+    if count >= MAX_COUNTERS_PER_CHARACTER:
+        session.close()
+        return False, f"This character has reached the maximum number of counters ({MAX_COUNTERS_PER_CHARACTER})."
     new_counter = Counter(counter=counter_name, temp=temp, perm=perm, character=char)
     session.add(new_counter)
     session.commit()
     session.close()
-    return True
+    return True, None
 
 def update_counter(character_id: int, counter_name: str, field: str, delta: int):
     session = SessionLocal()
     counter = session.query(Counter).filter_by(character_id=character_id, counter=counter_name).first()
     if not counter:
         session.close()
-        return False
+        return False, "Counter not found."
     if field == "temp":
-        counter.temp += delta
+        new_value = counter.temp + delta
+        if new_value < 0:
+            session.close()
+            return False, "Cannot decrement temp below zero."
+        counter.temp = new_value
     elif field == "perm":
-        counter.perm += delta
+        new_value = counter.perm + delta
+        if new_value < 0:
+            session.close()
+            return False, "Cannot decrement perm below zero."
+        counter.perm = new_value
     else:
         session.close()
-        return False
+        return False, "Invalid field."
     session.commit()
     session.close()
-    return True
+    return True, None
 
 def get_counters_for_character(character_id: int):
     session = SessionLocal()
@@ -174,8 +205,11 @@ avct_group = discord.app_commands.Group(name="avct", description="AVCT commands"
 @avct_group.command(name="addcharacter", description="Add a character")
 async def addcharacter(interaction: discord.Interaction, character: str):
     user_id = str(interaction.user.id)
-    add_user_character(user_id, character)
-    await interaction.response.send_message(f"Character '{character}' added for you.", ephemeral=True)
+    success, error = add_user_character(user_id, character)
+    if success:
+        await interaction.response.send_message(f"Character '{character}' added for you.", ephemeral=True)
+    else:
+        await interaction.response.send_message(error, ephemeral=True)
 
 @avct_group.command(name="listcharacters", description="List your characters")
 async def listcharacters(interaction: discord.Interaction):
@@ -195,11 +229,11 @@ async def addcounter(interaction: discord.Interaction, character: str, counter: 
     if character_id is None:
         await interaction.response.send_message("Character not found for this user.", ephemeral=True)
         return
-    success = add_counter(character_id, counter, temp, perm)
+    success, error = add_counter(character_id, counter, temp, perm)
     if success:
         await interaction.response.send_message(f"Counter '{counter}' added to character '{character}'.", ephemeral=True)
     else:
-        await interaction.response.send_message("Failed to add counter.", ephemeral=True)
+        await interaction.response.send_message(error or "Failed to add counter.", ephemeral=True)
 
 @avct_group.command(name="temp", description="Change temp value for a counter")
 @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete)
@@ -209,7 +243,7 @@ async def temp(interaction: discord.Interaction, character: str, counter: str, d
     if character_id is None:
         await interaction.response.send_message("Character not found for this user.", ephemeral=True)
         return
-    success = update_counter(character_id, counter, "temp", delta)
+    success, error = update_counter(character_id, counter, "temp", delta)
     counters = get_counters_for_character(character_id)
     if success:
         msg = "\n".join([f"{c.counter}: {c.temp}/{c.perm}" for c in counters])
@@ -217,7 +251,7 @@ async def temp(interaction: discord.Interaction, character: str, counter: str, d
             f"Temp for counter '{counter}' on character '{character}' changed by {delta}.\n"
             f"Counters for character '{character}':\n{msg}", ephemeral=True)
     else:
-        await interaction.response.send_message("Counter or character not found.", ephemeral=True)
+        await interaction.response.send_message(error or "Counter or character not found.", ephemeral=True)
 
 @avct_group.command(name="perm", description="Change perm value for a counter")
 @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete)
@@ -227,7 +261,7 @@ async def perm(interaction: discord.Interaction, character: str, counter: str, d
     if character_id is None:
         await interaction.response.send_message("Character not found for this user.", ephemeral=True)
         return
-    success = update_counter(character_id, counter, "perm", delta)
+    success, error = update_counter(character_id, counter, "perm", delta)
     counters = get_counters_for_character(character_id)
     if success:
         msg = "\n".join([f"{c.counter}: {c.temp}/{c.perm}" for c in counters])
@@ -235,7 +269,7 @@ async def perm(interaction: discord.Interaction, character: str, counter: str, d
             f"Perm for counter '{counter}' on character '{character}' changed by {delta}.\n"
             f"Counters for character '{character}':\n{msg}", ephemeral=True)
     else:
-        await interaction.response.send_message("Counter or character not found.", ephemeral=True)
+        await interaction.response.send_message(error or "Counter or character not found.", ephemeral=True)
 
 @avct_group.command(name="hellobyname", description="Greet the user by display name and username")
 async def hellobyname(interaction: discord.Interaction):
@@ -243,12 +277,12 @@ async def hellobyname(interaction: discord.Interaction):
     username = interaction.user.name
     await interaction.response.send_message(f"Hello, {display_name} (username: {username})! 👋", ephemeral=True)
 
-@avct_group.command(name="character", description="Show character info")
-class CharacterGroup(discord.app_commands.Group):
-    def __init__(self):
-        super().__init__(name="character", description="Character related commands")
+# Remove the incorrect usage of @avct_group.command with a class (CharacterGroup).
+# Instead, add the "counters" command directly under the "character" subcommand group.
 
-@CharacterGroup.command(name="counters", description="List counters for a character")
+character_group = discord.app_commands.Group(name="character", description="Character related commands")
+
+@character_group.command(name="counters", description="List counters for a character")
 @discord.app_commands.autocomplete(character=character_name_autocomplete)
 async def counters(interaction: discord.Interaction, character: str):
     user_id = str(interaction.user.id)
@@ -266,7 +300,9 @@ async def counters(interaction: discord.Interaction, character: str):
     msg = "\n".join([f"{c.counter}: {c.temp}/{c.perm}" for c in counters])
     await interaction.response.send_message(f"Counters for character '{character}':\n{msg}", ephemeral=True)
 
-avct_group.add_command(CharacterGroup())
+# Register the character group as a subcommand of avct_group
+avct_group.add_command(character_group)
+
 tree.add_command(avct_group)
 
 @bot.event
@@ -277,8 +313,11 @@ async def on_ready():
 @bot.command(name="avctaddcharacter")
 async def addcharacter_text(ctx, character: str):
     user_id = str(ctx.author.id)
-    add_user_character(user_id, character)
-    await ctx.send(f"Character '{character}' added for you.")
+    success, error = add_user_character(user_id, character)
+    if success:
+        await ctx.send(f"Character '{character}' added for you.")
+    else:
+        await ctx.send(error)
 
 @bot.command(name="avctlistcharacters")
 async def listcharacters_text(ctx):
@@ -297,11 +336,11 @@ async def addcounter_text(ctx, character: str, counter: str, temp: int, perm: in
     if character_id is None:
         await ctx.send("Character not found for this user.")
         return
-    success = add_counter(character_id, counter, temp, perm)
+    success, error = add_counter(character_id, counter, temp, perm)
     if success:
         await ctx.send(f"Counter '{counter}' added to character '{character}'.")
     else:
-        await ctx.send("Failed to add counter.")
+        await ctx.send(error or "Failed to add counter.")
 
 @bot.command(name="avcttemp")
 async def temp_text(ctx, character: str, counter: str, delta: int):
@@ -310,7 +349,7 @@ async def temp_text(ctx, character: str, counter: str, delta: int):
     if character_id is None:
         await ctx.send("Character not found for this user.")
         return
-    success = update_counter(character_id, counter, "temp", delta)
+    success, error = update_counter(character_id, counter, "temp", delta)
     counters = get_counters_for_character(character_id)
     if success:
         msg = "\n".join([f"{c.counter}: {c.temp}/{c.perm}" for c in counters])
@@ -318,7 +357,7 @@ async def temp_text(ctx, character: str, counter: str, delta: int):
             f"Temp for counter '{counter}' on character '{character}' changed by {delta}.\n"
             f"Counters for character '{character}':\n{msg}")
     else:
-        await ctx.send("Counter or character not found.")
+        await ctx.send(error or "Counter or character not found.")
 
 @bot.command(name="avctperm")
 async def perm_text(ctx, character: str, counter: str, delta: int):
@@ -327,7 +366,7 @@ async def perm_text(ctx, character: str, counter: str, delta: int):
     if character_id is None:
         await ctx.send("Character not found for this user.")
         return
-    success = update_counter(character_id, counter, "perm", delta)
+    success, error = update_counter(character_id, counter, "perm", delta)
     counters = get_counters_for_character(character_id)
     if success:
         msg = "\n".join([f"{c.counter}: {c.temp}/{c.perm}" for c in counters])
@@ -335,7 +374,7 @@ async def perm_text(ctx, character: str, counter: str, delta: int):
             f"Perm for counter '{counter}' on character '{character}' changed by {delta}.\n"
             f"Counters for character '{character}':\n{msg}")
     else:
-        await ctx.send("Counter or character not found.")
+        await ctx.send(error or "Counter or character not found.")
 
 @bot.command(name="avctlistcounters")
 async def listcounters_text(ctx, character: str):
@@ -370,5 +409,118 @@ async def character_text(ctx, character: str):
         return
     msg = "\n".join([f"{c.counter}: {c.temp}/{c.perm}" for c in counters])
     await ctx.send(f"Counters for character '{character}':\n{msg}")
+
+def rename_character(user_id: str, old_name: str, new_name: str):
+    session = SessionLocal()
+    # Check if new_name already exists for this user
+    existing = session.query(UserCharacter).filter_by(user=user_id, character=new_name).first()
+    if existing:
+        session.close()
+        return False, "A character with that name already exists for you."
+    char = session.query(UserCharacter).filter_by(user=user_id, character=old_name).first()
+    if not char:
+        session.close()
+        return False, "Character to rename not found."
+    char.character = new_name
+    session.commit()
+    session.close()
+    return True, None
+
+@avct_group.command(name="renamecharacter", description="Rename a character (only if new name does not exist for you)")
+@discord.app_commands.autocomplete(old_name=character_name_autocomplete)
+async def renamecharacter(interaction: discord.Interaction, old_name: str, new_name: str):
+    user_id = str(interaction.user.id)
+    success, error = rename_character(user_id, old_name, new_name)
+    if success:
+        await interaction.response.send_message(f"Character '{old_name}' renamed to '{new_name}'.", ephemeral=True)
+    else:
+        await interaction.response.send_message(error, ephemeral=True)
+
+@bot.command(name="avctrenamecharacter")
+async def renamecharacter_text(ctx, old_name: str, new_name: str):
+    user_id = str(ctx.author.id)
+    success, error = rename_character(user_id, old_name, new_name)
+    if success:
+        await ctx.send(f"Character '{old_name}' renamed to '{new_name}'.")
+    else:
+        await ctx.send(error)
+
+def rename_counter(character_id: int, old_name: str, new_name: str):
+    session = SessionLocal()
+    # Check if new_name already exists for this character
+    existing = session.query(Counter).filter_by(character_id=character_id, counter=new_name).first()
+    if existing:
+        session.close()
+        return False, "A counter with that name already exists for this character."
+    counter_obj = session.query(Counter).filter_by(character_id=character_id, counter=old_name).first()
+    if not counter_obj:
+        session.close()
+        return False, "Counter to rename not found."
+    counter_obj.counter = new_name
+    session.commit()
+    session.close()
+    return True, None
+
+@avct_group.command(name="renamecounter", description="Rename a counter (only if new name does not exist for this character)")
+@discord.app_commands.autocomplete(character=character_name_autocomplete, old_name=counter_name_autocomplete)
+async def renamecounter(interaction: discord.Interaction, character: str, old_name: str, new_name: str):
+    user_id = str(interaction.user.id)
+    character_id = get_character_id_by_user_and_name(user_id, character)
+    if character_id is None:
+        await interaction.response.send_message("Character not found for this user.", ephemeral=True)
+        return
+    success, error = rename_counter(character_id, old_name, new_name)
+    if success:
+        await interaction.response.send_message(f"Counter '{old_name}' renamed to '{new_name}' for character '{character}'.", ephemeral=True)
+    else:
+        await interaction.response.send_message(error, ephemeral=True)
+
+@bot.command(name="avctrenamecounter")
+async def renamecounter_text(ctx, character: str, old_name: str, new_name: str):
+    user_id = str(ctx.author.id)
+    character_id = get_character_id_by_user_and_name(user_id, character)
+    if character_id is None:
+        await ctx.send("Character not found for this user.")
+        return
+    success, error = rename_counter(character_id, old_name, new_name)
+    if success:
+        await ctx.send(f"Counter '{old_name}' renamed to '{new_name}' for character '{character}'.")
+    else:
+        await ctx.send(error)
+
+def remove_character(user_id: str, character_name: str):
+    session = SessionLocal()
+    char = session.query(UserCharacter).filter_by(user=user_id, character=character_name).first()
+    if not char:
+        session.close()
+        return False, "Character not found.", None
+    # Gather details before deletion
+    counters = session.query(Counter).filter_by(character_id=char.id).all()
+    details = "\n".join([f"{c.counter}: {c.temp}/{c.perm}" for c in counters])
+    session.delete(char)
+    session.commit()
+    session.close()
+    return True, None, details
+
+@avct_group.command(name="removecharacter", description="Remove a character and show its details to everyone")
+@discord.app_commands.autocomplete(character=character_name_autocomplete)
+async def removecharacter(interaction: discord.Interaction, character: str):
+    user_id = str(interaction.user.id)
+    success, error, details = remove_character(user_id, character)
+    if success:
+        msg = f"Character '{character}' was removed.\nDetails before removal:\n{details if details else 'No counters.'}"
+        await interaction.response.send_message(msg, ephemeral=False)
+    else:
+        await interaction.response.send_message(error, ephemeral=True)
+
+@bot.command(name="avctremovecharacter")
+async def removecharacter_text(ctx, character: str):
+    user_id = str(ctx.author.id)
+    success, error, details = remove_character(user_id, character)
+    if success:
+        msg = f"Character '{character}' was removed.\nDetails before removal:\n{details if details else 'No counters.'}"
+        await ctx.send(msg)
+    else:
+        await ctx.send(error)
 
 bot.run(TOKEN)
