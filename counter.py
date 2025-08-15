@@ -91,7 +91,6 @@ class CounterFactory:
             case PredefinedCounterEnum.blood_pool:
                 return CounterFactory.create_blood_pool(character, perm, comment, name)
             case PredefinedCounterEnum.willpower_fae:
-                # Always use "willpower" as the name for willpower_fae
                 return CounterFactory.create_willpower_fae(character, perm, comment, "willpower")
             case PredefinedCounterEnum.glamour:
                 return CounterFactory.create_glamour(character, perm, comment, name)
@@ -106,7 +105,7 @@ class CounterFactory:
             case PredefinedCounterEnum.item_with_charges:
                 return CounterFactory.create_item_with_charges(character, perm, comment, name)
             case PredefinedCounterEnum.project_roll:
-                return CounterFactory.create_project_roll(character, comment, name)
+                return CounterFactory.create_project_roll(character, perm, comment, name)
             case _:
                 raise ValueError("Unknown counter type")
 
@@ -258,8 +257,10 @@ class CounterFactory:
 
     @staticmethod
     def create_item_with_charges(character, perm, comment=None, name=None):
+        if not name:
+            raise ValueError("A name must be provided for item_with_charges counters.")
         return Counter(
-            counter=name if name else "item_with_charges",
+            counter=name,
             temp=perm,
             perm=perm,
             counter_type=CounterTypeEnum.perm_is_maximum.value,
@@ -269,11 +270,13 @@ class CounterFactory:
         )
 
     @staticmethod
-    def create_project_roll(character, comment=None, name=None):
+    def create_project_roll(character, perm, comment=None, name=None):
+        if not name:
+            raise ValueError("A name must be provided for project_roll counters.")
         return Counter(
-            counter=name if name else "project_roll",
+            counter=name,
             temp=0,
-            perm=0,
+            perm=perm,
             counter_type=CounterTypeEnum.perm_not_maximum.value,
             category=CategoryEnum.projects.value,
             comment=comment,
