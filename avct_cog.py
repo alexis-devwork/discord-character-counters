@@ -75,9 +75,9 @@ class AvctCog(commands.Cog):
             interaction: discord.Interaction,
             character: str,
             counter_type: str,
-            starting: int,
+            value: int = None,
             comment: str = None,
-            name_override: str = None
+            name_override: str = None  # Used for all override cases, required for project_roll and item_with_charges
         ):
             character = sanitize_string(character)
             user_id = str(interaction.user.id)
@@ -92,17 +92,25 @@ class AvctCog(commands.Cog):
                 await interaction.response.send_message("Invalid counter type selected.", ephemeral=True)
                 return
 
-            # Use name_override as override_name for item_with_charges, glory, honor, wisdom if provided
-            override_name = None
-            if counter_enum in (
-                PredefinedCounterEnum.item_with_charges,
-                PredefinedCounterEnum.glory,
-                PredefinedCounterEnum.honor,
-                PredefinedCounterEnum.wisdom
-            ) and name_override:
+            # Require name_override for project_roll and item_with_charges
+            if counter_enum in (PredefinedCounterEnum.project_roll, PredefinedCounterEnum.item_with_charges):
+                if not name_override:
+                    await interaction.response.send_message("You must specify a counter name for this type.", ephemeral=True)
+                    return
                 override_name = name_override
+            else:
+                # Use name_override for glory, honor, wisdom if provided
+                override_name = None
+                if counter_enum in (
+                    PredefinedCounterEnum.glory,
+                    PredefinedCounterEnum.honor,
+                    PredefinedCounterEnum.wisdom
+                ) and name_override:
+                    override_name = name_override
 
-            success, error = add_predefined_counter(character_id, counter_enum.value, starting, comment, override_name)
+            perm_value = value
+
+            success, error = add_predefined_counter(character_id, counter_enum.value, perm_value, comment, override_name)
             if success:
                 await interaction.response.send_message(
                     f"{counter_type.title()} counter added to character '{character}'.", ephemeral=True)
