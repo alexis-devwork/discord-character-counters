@@ -117,20 +117,67 @@ async def counter_name_autocomplete(interaction: discord.Interaction, current: s
         for name in unique_counters
     ][:25]
 
+# --- Subcommand autocomplete for /avct ---
+SUBCOMMANDS = [
+    "addcharacter",
+    "listcharacters",
+    "addcounter",
+    "changetemp",
+    "changeperm",
+    "listcounters",
+    "hellobyname"
+]
+
+async def subcommand_autocomplete(interaction: discord.Interaction, current: str):
+    return [
+        discord.app_commands.Choice(name=cmd, value=cmd)
+        for cmd in SUBCOMMANDS if current.lower() in cmd.lower()
+    ][:25]
+
 class MyBot(commands.Bot):
     async def setup_hook(self):
         await self.tree.sync()
 
-bot = MyBot(command_prefix="/", intents=intents)
+bot = MyBot(command_prefix="/avct", intents=intents)
 tree = bot.tree
 
-@tree.command(name="addcharacter", description="Add a character")
+# --- Subcommand autocomplete helpers ---
+async def character_name_autocomplete(interaction: discord.Interaction, current: str):
+    user_id = str(interaction.user.id)
+    session = SessionLocal()
+    chars = session.query(UserCharacter).filter_by(user=user_id).all()
+    session.close()
+    return [
+        discord.app_commands.Choice(name=char.character, value=char.character)
+        for char in chars if current.lower() in char.character.lower()
+    ][:25]
+
+async def counter_name_autocomplete(interaction: discord.Interaction, current: str):
+    user_id = str(interaction.user.id)
+    session = SessionLocal()
+    chars = session.query(UserCharacter).filter_by(user=user_id).all()
+    counters = []
+    for char in chars:
+        for counter in char.counters:
+            if current.lower() in counter.counter.lower():
+                counters.append(counter.counter)
+    session.close()
+    unique_counters = list(dict.fromkeys(counters))
+    return [
+        discord.app_commands.Choice(name=name, value=name)
+        for name in unique_counters
+    ][:25]
+
+# --- AVCT group with subcommands ---
+avct_group = discord.app_commands.Group(name="avct", description="AVCT commands")
+
+@avct_group.command(name="addcharacter", description="Add a character")
 async def addcharacter(interaction: discord.Interaction, character: str):
     user_id = str(interaction.user.id)
     add_user_character(user_id, character)
     await interaction.response.send_message(f"Character '{character}' added for you.", ephemeral=True)
 
-@tree.command(name="listcharacters", description="List your characters")
+@avct_group.command(name="listcharacters", description="List your characters")
 async def listcharacters(interaction: discord.Interaction):
     user_id = str(interaction.user.id)
     entries = get_all_user_characters_for_user(user_id)
@@ -140,7 +187,7 @@ async def listcharacters(interaction: discord.Interaction):
     msg = "\n".join([f"ID: {e.id}, Character: {e.character}" for e in entries])
     await interaction.response.send_message(f"Characters for you:\n{msg}", ephemeral=True)
 
-@tree.command(name="addcounter", description="Add a counter to a character")
+@avct_group.command(name="addcounter", description="Add a counter to a character")
 @discord.app_commands.autocomplete(character=character_name_autocomplete)
 async def addcounter(interaction: discord.Interaction, character: str, counter: str, temp: int, perm: int):
     user_id = str(interaction.user.id)
@@ -154,63 +201,86 @@ async def addcounter(interaction: discord.Interaction, character: str, counter: 
     else:
         await interaction.response.send_message("Failed to add counter.", ephemeral=True)
 
-@tree.command(name="changetemp", description="Change temp value for a counter")
+@avct_group.command(name="temp", description="Change temp value for a counter")
 @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete)
-async def changetemp(interaction: discord.Interaction, character: str, counter: str, delta: int):
+async def temp(interaction: discord.Interaction, character: str, counter: str, delta: int):
     user_id = str(interaction.user.id)
     character_id = get_character_id_by_user_and_name(user_id, character)
     if character_id is None:
         await interaction.response.send_message("Character not found for this user.", ephemeral=True)
         return
     success = update_counter(character_id, counter, "temp", delta)
+    counters = get_counters_for_character(character_id)
     if success:
-        await interaction.response.send_message(f"Temp for counter '{counter}' on character '{character}' changed by {delta}.", ephemeral=True)
+        msg = "\n".join([f"{c.counter}: {c.temp}/{c.perm}" for c in counters])
+        await interaction.response.send_message(
+            f"Temp for counter '{counter}' on character '{character}' changed by {delta}.\n"
+            f"Counters for character '{character}':\n{msg}", ephemeral=True)
     else:
         await interaction.response.send_message("Counter or character not found.", ephemeral=True)
 
-@tree.command(name="changeperm", description="Change perm value for a counter")
+@avct_group.command(name="perm", description="Change perm value for a counter")
 @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete)
-async def changeperm(interaction: discord.Interaction, character: str, counter: str, delta: int):
+async def perm(interaction: discord.Interaction, character: str, counter: str, delta: int):
     user_id = str(interaction.user.id)
     character_id = get_character_id_by_user_and_name(user_id, character)
     if character_id is None:
         await interaction.response.send_message("Character not found for this user.", ephemeral=True)
         return
     success = update_counter(character_id, counter, "perm", delta)
+    counters = get_counters_for_character(character_id)
     if success:
-        await interaction.response.send_message(f"Perm for counter '{counter}' on character '{character}' changed by {delta}.", ephemeral=True)
+        msg = "\n".join([f"{c.counter}: {c.temp}/{c.perm}" for c in counters])
+        await interaction.response.send_message(
+            f"Perm for counter '{counter}' on character '{character}' changed by {delta}.\n"
+            f"Counters for character '{character}':\n{msg}", ephemeral=True)
     else:
         await interaction.response.send_message("Counter or character not found.", ephemeral=True)
 
-@tree.command(name="listcounters", description="List counters for a character")
-@discord.app_commands.autocomplete(character=character_name_autocomplete)
-async def listcounters(interaction: discord.Interaction, character: str):
-    user_id = str(interaction.user.id)
-    character_id = get_character_id_by_user_and_name(user_id, character)
-    if character_id is None:
-        await interaction.response.send_message("Character not found for this user.", ephemeral=True)
-        return
-    counters = get_counters_for_character(character_id)
-    if not counters:
-        await interaction.response.send_message("No counters found for this character.", ephemeral=True)
-        return
-    msg = "\n".join([f"Counter: {c.counter}, Temp: {c.temp}, Perm: {c.perm}" for c in counters])
-    await interaction.response.send_message(f"Counters for character '{character}':\n{msg}", ephemeral=True)
-
-@tree.command(name="hellobyname", description="Greet the user by display name and username")
+@avct_group.command(name="hellobyname", description="Greet the user by display name and username")
 async def hellobyname(interaction: discord.Interaction):
     display_name = interaction.user.display_name
     username = interaction.user.name
     await interaction.response.send_message(f"Hello, {display_name} (username: {username})! 👋", ephemeral=True)
 
+@avct_group.command(name="character", description="Show character info")
+class CharacterGroup(discord.app_commands.Group):
+    def __init__(self):
+        super().__init__(name="character", description="Character related commands")
+
+@CharacterGroup.command(name="counters", description="List counters for a character")
+@discord.app_commands.autocomplete(character=character_name_autocomplete)
+async def counters(interaction: discord.Interaction, character: str):
+    user_id = str(interaction.user.id)
+    character_id = get_character_id_by_user_and_name(user_id, character)
+    if character_id is None:
+        await interaction.response.send_message(
+            "Character not found for this user. Please select a character from the dropdown/autocomplete.",
+            ephemeral=True
+        )
+        return
+    counters = get_counters_for_character(character_id)
+    if not counters:
+        await interaction.response.send_message("No counters found for this character.", ephemeral=True)
+        return
+    msg = "\n".join([f"{c.counter}: {c.temp}/{c.perm}" for c in counters])
+    await interaction.response.send_message(f"Counters for character '{character}':\n{msg}", ephemeral=True)
+
+avct_group.add_command(CharacterGroup())
+tree.add_command(avct_group)
+
+@bot.event
+async def on_ready():
+    print(f'Logged in as {bot.user}')
+
 # --- Prefix/Text commands for compatibility ---
-@bot.command(name="addcharacter")
+@bot.command(name="avctaddcharacter")
 async def addcharacter_text(ctx, character: str):
     user_id = str(ctx.author.id)
     add_user_character(user_id, character)
     await ctx.send(f"Character '{character}' added for you.")
 
-@bot.command(name="listcharacters")
+@bot.command(name="avctlistcharacters")
 async def listcharacters_text(ctx):
     user_id = str(ctx.author.id)
     entries = get_all_user_characters_for_user(user_id)
@@ -220,7 +290,7 @@ async def listcharacters_text(ctx):
     msg = "\n".join([f"ID: {e.id}, Character: {e.character}" for e in entries])
     await ctx.send(f"Characters for you:\n{msg}")
 
-@bot.command(name="addcounter")
+@bot.command(name="avctaddcounter")
 async def addcounter_text(ctx, character: str, counter: str, temp: int, perm: int):
     user_id = str(ctx.author.id)
     character_id = get_character_id_by_user_and_name(user_id, character)
@@ -233,33 +303,41 @@ async def addcounter_text(ctx, character: str, counter: str, temp: int, perm: in
     else:
         await ctx.send("Failed to add counter.")
 
-@bot.command(name="changetemp")
-async def changetemp_text(ctx, character: str, counter: str, delta: int):
+@bot.command(name="avcttemp")
+async def temp_text(ctx, character: str, counter: str, delta: int):
     user_id = str(ctx.author.id)
     character_id = get_character_id_by_user_and_name(user_id, character)
     if character_id is None:
         await ctx.send("Character not found for this user.")
         return
     success = update_counter(character_id, counter, "temp", delta)
+    counters = get_counters_for_character(character_id)
     if success:
-        await ctx.send(f"Temp for counter '{counter}' on character '{character}' changed by {delta}.")
+        msg = "\n".join([f"{c.counter}: {c.temp}/{c.perm}" for c in counters])
+        await ctx.send(
+            f"Temp for counter '{counter}' on character '{character}' changed by {delta}.\n"
+            f"Counters for character '{character}':\n{msg}")
     else:
         await ctx.send("Counter or character not found.")
 
-@bot.command(name="changeperm")
-async def changeperm_text(ctx, character: str, counter: str, delta: int):
+@bot.command(name="avctperm")
+async def perm_text(ctx, character: str, counter: str, delta: int):
     user_id = str(ctx.author.id)
     character_id = get_character_id_by_user_and_name(user_id, character)
     if character_id is None:
         await ctx.send("Character not found for this user.")
         return
     success = update_counter(character_id, counter, "perm", delta)
+    counters = get_counters_for_character(character_id)
     if success:
-        await ctx.send(f"Perm for counter '{counter}' on character '{character}' changed by {delta}.")
+        msg = "\n".join([f"{c.counter}: {c.temp}/{c.perm}" for c in counters])
+        await ctx.send(
+            f"Perm for counter '{counter}' on character '{character}' changed by {delta}.\n"
+            f"Counters for character '{character}':\n{msg}")
     else:
         await ctx.send("Counter or character not found.")
 
-@bot.command(name="listcounters")
+@bot.command(name="avctlistcounters")
 async def listcounters_text(ctx, character: str):
     user_id = str(ctx.author.id)
     character_id = get_character_id_by_user_and_name(user_id, character)
@@ -270,17 +348,27 @@ async def listcounters_text(ctx, character: str):
     if not counters:
         await ctx.send("No counters found for this character.")
         return
-    msg = "\n".join([f"Counter: {c.counter}, Temp: {c.temp}, Perm: {c.perm}" for c in counters])
+    msg = "\n".join([f"{c.counter}: {c.temp}/{c.perm}" for c in counters])
     await ctx.send(f"Counters for character '{character}':\n{msg}")
 
-@bot.command(name="hellobyname")
+@bot.command(name="avcthellobyname")
 async def hellobyname_text(ctx):
     display_name = ctx.author.display_name
     username = ctx.author.name
     await ctx.send(f"Hello, {display_name} (username: {username})! 👋")
 
-@bot.event
-async def on_ready():
-    print(f'Logged in as {bot.user}')
+@bot.command(name="avctcharacter")
+async def character_text(ctx, character: str):
+    user_id = str(ctx.author.id)
+    character_id = get_character_id_by_user_and_name(user_id, character)
+    if character_id is None:
+        await ctx.send("Character not found for this user.")
+        return
+    counters = get_counters_for_character(character_id)
+    if not counters:
+        await ctx.send("No counters found for this character.")
+        return
+    msg = "\n".join([f"{c.counter}: {c.temp}/{c.perm}" for c in counters])
+    await ctx.send(f"Counters for character '{character}':\n{msg}")
 
 bot.run(TOKEN)
