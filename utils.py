@@ -1,8 +1,5 @@
 import discord
 from discord.ext import commands
-from sqlalchemy import create_engine, Column, Integer, String, ForeignKey
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship
-import enum
 import html
 import re
 from config import (
@@ -11,38 +8,23 @@ from config import (
     MAX_FIELD_LENGTH,
     MAX_COMMENT_LENGTH,
 )
+from sqlalchemy import create_engine, Column, Integer, String, ForeignKey
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship, joinedload
+
+# Individual imports from counter.py
+from counter import (
+    PredefinedCounterEnum,
+    CategoryEnum,
+    Counter,
+    CounterFactory,
+    UserCharacter,
+    create_all_tables,  # import the new function
+)
 
 
 Base = declarative_base()
-
-class UserCharacter(Base):
-    __tablename__ = "user_characters"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user = Column(String, nullable=False)
-    character = Column(String, nullable=False)
-    counters = relationship("Counter", back_populates="character", cascade="all, delete-orphan")
-
-class CategoryEnum(enum.Enum):
-    general = "general"
-    tempers = "tempers"
-    xp = "xp"
-    items = "items"
-    projects = "projects"
-    other = "other"
-
-class Counter(Base):
-    __tablename__ = "counters"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    counter = Column(String, nullable=False)
-    temp = Column(Integer, nullable=False)
-    perm = Column(Integer, nullable=False)
-    character_id = Column(Integer, ForeignKey("user_characters.id"), nullable=False)
-    category = Column(String, nullable=False, default=CategoryEnum.general.value)
-    comment = Column(String, nullable=True)  # <-- Added comment field
-    character = relationship("UserCharacter", back_populates="counters")
-
 engine = create_engine("sqlite:///db.sqlite3")
-Base.metadata.create_all(engine)
+create_all_tables(engine)  # Ensure tables are created before anything else
 SessionLocal = sessionmaker(bind=engine)
 
 class MyBot(commands.Bot):
@@ -89,7 +71,7 @@ def add_user_character(user_id: str, character: str):
 
 def get_all_user_characters_for_user(user_id: str):
     session = SessionLocal()
-    results = session.query(UserCharacter).filter_by(user=user_id).all()
+    results = session.query(UserCharacter).options(joinedload(UserCharacter.counters)).filter_by(user=user_id).all()
     session.close()
     return results
 
@@ -134,16 +116,30 @@ def update_counter(character_id: int, counter_name: str, field: str, delta: int)
         return False, "Counter not found."
     if field == "temp":
         new_value = counter.temp + delta
-        if new_value < 0:
-            session.close()
-            return False, "Cannot decrement temp below zero."
-        counter.temp = new_value
+        # Check for perm_is_maximum types
+        if counter.counter_type in ["perm_is_maximum", "perm_is_maximum_bedlam"]:
+            if new_value > counter.perm:
+                counter.temp = counter.perm
+            elif new_value < 0:
+                session.close()
+                return False, "Cannot decrement temp below zero."
+            else:
+                counter.temp = new_value
+        else:
+            if new_value < 0:
+                session.close()
+                return False, "Cannot decrement temp below zero."
+            counter.temp = new_value
     elif field == "perm":
         new_value = counter.perm + delta
         if new_value < 0:
             session.close()
             return False, "Cannot decrement perm below zero."
         counter.perm = new_value
+        # Optionally, adjust temp if perm is lowered below temp for perm_is_maximum types
+        if counter.counter_type in ["perm_is_maximum", "perm_is_maximum_bedlam"]:
+            if counter.temp > counter.perm:
+                counter.temp = counter.perm
     else:
         session.close()
         return False, "Invalid field."
@@ -214,26 +210,6 @@ async def category_autocomplete(interaction: discord.Interaction, current: str):
         discord.app_commands.Choice(name=cat, value=cat)
         for cat in categories if current.lower() in cat.lower()
     ][:25]
-
-# --- Subcommand autocomplete for /avct ---
-SUBCOMMANDS = [
-    "addcharacter",
-    "listcharacters",
-    "addcounter",
-    "changetemp",
-    "changeperm",
-    "listcounters",
-    "hellobyname"
-]
-
-async def subcommand_autocomplete(interaction: discord.Interaction, current: str):
-    return [
-        discord.app_commands.Choice(name=cmd, value=cmd)
-        for cmd in SUBCOMMANDS if current.lower() in cmd.lower()
-    ][:25]
-
-
-
 
 
 # --- Subcommand autocomplete helpers ---
@@ -390,3 +366,32 @@ def rename_counter(character_id: int, old_name: str, new_name: str):
     session.close()
     return True, None
 
+
+def add_predefined_counter(character_id: int, counter_type: str, perm: int, comment: str = None, override_name: str = None):
+    session = SessionLocal()
+    char = session.query(UserCharacter).filter_by(id=character_id).first()
+    if not char:
+        session.close()
+        return False, "Character not found."
+    try:
+        enum_type = PredefinedCounterEnum(counter_type)
+    except ValueError:
+        session.close()
+        return False, "Invalid predefined counter type."
+    # Check if counter already exists for this character
+    name = override_name if override_name else enum_type.value
+    existing = session.query(Counter).filter_by(character_id=character_id, counter=name).first()
+    if existing:
+        session.close()
+        return False, "A counter with that name exists for this character."
+    # Enforce maximum counters per character
+    count = session.query(Counter).filter_by(character_id=character_id).count()
+    if count >= MAX_COUNTERS_PER_CHARACTER:
+        session.close()
+        return False, f"This character has reached the maximum number of counters ({MAX_COUNTERS_PER_CHARACTER})."
+    # Create the counter object
+    counter_obj = CounterFactory.create(enum_type, char, perm, comment, override_name)
+    session.add(counter_obj)
+    session.commit()
+    session.close()
+    return True, None
