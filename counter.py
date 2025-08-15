@@ -5,13 +5,13 @@ import enum
 Base = declarative_base()
 
 # Minimal UserCharacter class for ORM relationship
-class UserCharacter(Base):
-    __tablename__ = "user_characters"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    character = Column(String, nullable=False)
-    user = Column(String, nullable=False)
-    counters = relationship("Counter", back_populates="character", cascade="all, delete-orphan")
-
+class UserCharacter:
+    def __init__(self, user, character, counters=None, health=None, id=None):
+        self.user = user
+        self.character = character
+        self.counters = counters if counters is not None else []
+        self.health = health if health is not None else []
+        self.id = id
 
 class CounterTypeEnum(enum.Enum):
     single_number = "single_number"
@@ -49,22 +49,18 @@ class CategoryEnum(enum.Enum):
     projects = "projects"
     xp = "xp"
 
-class Counter(Base):
-    __tablename__ = "counters"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    counter = Column(String, nullable=False)
-    temp = Column(Integer, nullable=False)
-    perm = Column(Integer, nullable=False)
-    character_id = Column(Integer, ForeignKey("user_characters.id"), nullable=False)
-    category = Column(String, nullable=False, default=CategoryEnum.general.value)
-    comment = Column(String, nullable=True)
-    bedlam = Column(Integer, nullable=True, default=0)  # Renamed back from third_counter to bedlam
-    counter_type = Column(String, nullable=False, default="single_number")
-    character = relationship("UserCharacter", back_populates="counters")
+class Counter:
+    def __init__(self, counter, temp, perm, category, comment=None, bedlam=0, counter_type="single_number"):
+        self.counter = counter
+        self.temp = temp
+        self.perm = perm
+        self.category = category
+        self.comment = comment
+        self.bedlam = bedlam
+        self.counter_type = counter_type
 
     def generate_display(self, fully_unescape_func):
         base = f"{fully_unescape_func(self.counter)}: {self.temp}/{self.perm}"
-
         if self.counter_type == CounterTypeEnum.perm_is_maximum_bedlam.value:
             if not self.bedlam:
                 self.bedlam = 0
@@ -75,188 +71,175 @@ class Counter(Base):
 
 class CounterFactory:
     @staticmethod
-    def create(counter_type: PredefinedCounterEnum, character, perm, comment=None, override_name=None):
+    def create(counter_type: PredefinedCounterEnum, perm, comment=None, override_name=None):
         name = override_name if override_name else counter_type.value
         match counter_type:
             case PredefinedCounterEnum.glory:
-                return CounterFactory.create_glory(character, perm, comment, name)
+                return CounterFactory.create_glory(perm, comment, name)
             case PredefinedCounterEnum.honor:
-                return CounterFactory.create_honor(character, perm, comment, name)
+                return CounterFactory.create_honor(perm, comment, name)
             case PredefinedCounterEnum.wisdom:
-                return CounterFactory.create_wisdom(character, perm, comment, name)
+                return CounterFactory.create_wisdom(perm, comment, name)
             case PredefinedCounterEnum.willpower:
-                return CounterFactory.create_willpower(character, perm, comment, name)
+                return CounterFactory.create_willpower(perm, comment, name)
             case PredefinedCounterEnum.mana:
-                return CounterFactory.create_mana(character, perm, comment, name)
+                return CounterFactory.create_mana(perm, comment, name)
             case PredefinedCounterEnum.blood_pool:
-                return CounterFactory.create_blood_pool(character, perm, comment, name)
+                return CounterFactory.create_blood_pool(perm, comment, name)
             case PredefinedCounterEnum.willpower_fae:
-                return CounterFactory.create_willpower_fae(character, perm, comment, "willpower")
+                return CounterFactory.create_willpower_fae(perm, comment, "willpower")
             case PredefinedCounterEnum.glamour:
-                return CounterFactory.create_glamour(character, perm, comment, name)
+                return CounterFactory.create_glamour(perm, comment, name)
             case PredefinedCounterEnum.nightmare:
-                return CounterFactory.create_nightmare(character, comment, name)
+                return CounterFactory.create_nightmare(comment, name)
             case PredefinedCounterEnum.banality:
-                return CounterFactory.create_banality(character, perm, comment, name)
+                return CounterFactory.create_banality(perm, comment, name)
             case PredefinedCounterEnum.rage:
-                return CounterFactory.create_rage(character, perm, comment, name)
+                return CounterFactory.create_rage(perm, comment, name)
             case PredefinedCounterEnum.gnosis:
-                return CounterFactory.create_gnosis(character, perm, comment, name)
+                return CounterFactory.create_gnosis(perm, comment, name)
             case PredefinedCounterEnum.item_with_charges:
-                return CounterFactory.create_item_with_charges(character, perm, comment, name)
+                return CounterFactory.create_item_with_charges(perm, comment, name)
             case PredefinedCounterEnum.project_roll:
-                return CounterFactory.create_project_roll(character, perm, comment, name)
+                return CounterFactory.create_project_roll(perm, comment, name)
             case _:
                 raise ValueError("Unknown counter type")
 
     @staticmethod
-    def create_willpower(character, perm, comment=None, name=None):
+    def create_willpower(perm, comment=None, name=None):
         return Counter(
             counter=name if name else "willpower",
             temp=perm,
             perm=perm,
             counter_type=CounterTypeEnum.perm_is_maximum.value,
             category=CategoryEnum.tempers.value,
-            comment=comment,
-            character=character
+            comment=comment
         )
 
     @staticmethod
-    def create_mana(character, perm, comment=None, name=None):
+    def create_mana(perm, comment=None, name=None):
         return Counter(
             counter=name if name else "mana",
             temp=perm,
             perm=perm,
             counter_type=CounterTypeEnum.perm_is_maximum.value,
             category=CategoryEnum.general.value,
-            comment=comment,
-            character=character
+            comment=comment
         )
 
     @staticmethod
-    def create_blood_pool(character, perm, comment=None, name=None):
+    def create_blood_pool(perm, comment=None, name=None):
         return Counter(
             counter=name if name else "blood pool",
             temp=perm,
             perm=perm,
             counter_type=CounterTypeEnum.perm_is_maximum.value,
             category=CategoryEnum.general.value,
-            comment=comment,
-            character=character
+            comment=comment
         )
 
     @staticmethod
-    def create_willpower_fae(character, perm, comment=None, name=None):
-        # Always use "willpower" as the display name
+    def create_willpower_fae(perm, comment=None, name=None):
         return Counter(
-            counter="willpower",
+            counter="willpower",  # Always set to "willpower" regardless of name parameter
             temp=perm,
             perm=perm,
             bedlam=0,
             counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value,
             category=CategoryEnum.tempers.value,
-            comment=comment,
-            character=character
+            comment=comment
         )
 
     @staticmethod
-    def create_glamour(character, perm, comment=None, name=None):
+    def create_glamour(perm, comment=None, name=None):
         return Counter(
             counter="glamour" if not name else name,
             temp=perm,
             perm=perm,
             counter_type=CounterTypeEnum.perm_is_maximum.value,
             category=CategoryEnum.tempers.value,
-            comment=comment,
-            character=character
+            comment=comment
         )
 
     @staticmethod
-    def create_nightmare(character, comment=None, name=None):
+    def create_nightmare(comment=None, name=None):
         return Counter(
             counter="nightmare" if not name else name,
             temp=0,
             perm=10,
             counter_type=CounterTypeEnum.perm_is_maximum.value,
             category=CategoryEnum.tempers.value,
-            comment=comment,
-            character=character
+            comment=comment
         )
 
     @staticmethod
-    def create_banality(character, perm, comment=None, name=None):
+    def create_banality(perm, comment=None, name=None):
         return Counter(
             counter="banality" if not name else name,
             temp=perm,
             perm=perm,
             counter_type=CounterTypeEnum.perm_not_maximum.value,
             category=CategoryEnum.tempers.value,
-            comment=comment,
-            character=character
+            comment=comment
         )
 
     @staticmethod
-    def create_glory(character, perm, comment=None, name=None):
+    def create_glory(perm, comment=None, name=None):
         return Counter(
             counter=name if name else "glory",
             temp=0,
             perm=perm,
             counter_type=CounterTypeEnum.perm_not_maximum.value,
             category=CategoryEnum.reknown.value,
-            comment=comment,
-            character=character
+            comment=comment
         )
 
     @staticmethod
-    def create_honor(character, perm, comment=None, name=None):
+    def create_honor(perm, comment=None, name=None):
         return Counter(
             counter=name if name else "honor",
             temp=0,
             perm=perm,
             counter_type=CounterTypeEnum.perm_not_maximum.value,
             category=CategoryEnum.reknown.value,
-            comment=comment,
-            character=character
+            comment=comment
         )
 
     @staticmethod
-    def create_wisdom(character, perm, comment=None, name=None):
+    def create_wisdom(perm, comment=None, name=None):
         return Counter(
             counter=name if name else "wisdom",
             temp=0,
             perm=perm,
             counter_type=CounterTypeEnum.perm_not_maximum.value,
             category=CategoryEnum.reknown.value,
-            comment=comment,
-            character=character
+            comment=comment
         )
 
     @staticmethod
-    def create_rage(character, perm, comment=None, name=None):
+    def create_rage(perm, comment=None, name=None):
         return Counter(
             counter="rage" if not name else name,
             temp=perm,
             perm=perm,
             counter_type=CounterTypeEnum.perm_not_maximum.value,
             category=CategoryEnum.tempers.value,
-            comment=comment,
-            character=character
+            comment=comment
         )
 
     @staticmethod
-    def create_gnosis(character, perm, comment=None, name=None):
+    def create_gnosis(perm, comment=None, name=None):
         return Counter(
             counter="gnosis" if not name else name,
             temp=perm,
             perm=perm,
             counter_type=CounterTypeEnum.perm_is_maximum.value,
             category=CategoryEnum.tempers.value,
-            comment=comment,
-            character=character
+            comment=comment
         )
 
     @staticmethod
-    def create_item_with_charges(character, perm, comment=None, name=None):
+    def create_item_with_charges(perm, comment=None, name=None):
         if not name:
             raise ValueError("A name must be provided for item_with_charges counters.")
         return Counter(
@@ -265,12 +248,11 @@ class CounterFactory:
             perm=perm,
             counter_type=CounterTypeEnum.perm_is_maximum.value,
             category=CategoryEnum.items.value,
-            comment=comment,
-            character=character
+            comment=comment
         )
 
     @staticmethod
-    def create_project_roll(character, perm, comment=None, name=None):
+    def create_project_roll(perm, comment=None, name=None):
         if not name:
             raise ValueError("A name must be provided for project_roll counters.")
         return Counter(
@@ -279,8 +261,7 @@ class CounterFactory:
             perm=perm,
             counter_type=CounterTypeEnum.perm_not_maximum.value,
             category=CategoryEnum.projects.value,
-            comment=comment,
-            character=character
+            comment=comment
         )
 
 def create_all_tables(engine):
@@ -291,3 +272,6 @@ class SplatEnum(enum.Enum):
     changeling = "changeling"
     vampire = "vampire"
     fera = "fera"
+
+engine = create_engine("sqlite:///:memory:")  # Or your actual database URI
+SessionLocal = sessionmaker(bind=engine)
