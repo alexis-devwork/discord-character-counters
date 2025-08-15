@@ -31,6 +31,7 @@ from utils import (
 from counter import UserCharacter
 from sqlalchemy.orm import joinedload  # <-- Add this import
 from health import Health, HealthTypeEnum
+import json
 
 class AvctCog(commands.Cog):
     def __init__(self, bot):
@@ -86,6 +87,14 @@ class AvctCog(commands.Cog):
                 mana,
                 ""
             )
+            # Add normal health tracker
+            session = SessionLocal()
+            char_obj = session.query(UserCharacter).filter_by(id=character_id).first()
+            if char_obj:
+                health_obj = Health(character=char_obj, health_type=HealthTypeEnum.normal)
+                session.add(health_obj)
+                session.commit()
+            session.close()
             splat_msg = f" (splat: sorc, willpower: {willpower}, mana: {mana})"
             await interaction.response.send_message(
                 f"Character '{character}'{splat_msg} added for you.",
@@ -122,6 +131,14 @@ class AvctCog(commands.Cog):
                 willpower,
                 ""
             )
+            # Add normal health tracker
+            session = SessionLocal()
+            char_obj = session.query(UserCharacter).filter_by(id=character_id).first()
+            if char_obj:
+                health_obj = Health(character=char_obj, health_type=HealthTypeEnum.normal)
+                session.add(health_obj)
+                session.commit()
+            session.close()
             splat_msg = f" (splat: vampire, blood_pool: {blood_pool}, willpower: {willpower})"
             await interaction.response.send_message(
                 f"Character '{character}'{splat_msg} added for you.",
@@ -173,6 +190,16 @@ class AvctCog(commands.Cog):
                 banality,
                 ""
             )
+            # Add normal and chimerical health trackers
+            session = SessionLocal()
+            char_obj = session.query(UserCharacter).filter_by(id=character_id).first()
+            if char_obj:
+                health_normal = Health(character=char_obj, health_type=HealthTypeEnum.normal)
+                health_chimerical = Health(character=char_obj, health_type=HealthTypeEnum.chimerical)
+                session.add(health_normal)
+                session.add(health_chimerical)
+                session.commit()
+            session.close()
             splat_msg = (
                 f" (splat: changeling, willpower_fae: {willpower_fae}, glamour: {glamour}, "
                 f"nightmare: {nightmare}, banality: {banality})"
@@ -247,6 +274,14 @@ class AvctCog(commands.Cog):
                 "",
                 wisdom_replacement if wisdom_replacement else None
             )
+            # Add normal health tracker
+            session = SessionLocal()
+            char_obj = session.query(UserCharacter).filter_by(id=character_id).first()
+            if char_obj:
+                health_obj = Health(character=char_obj, health_type=HealthTypeEnum.normal)
+                session.add(health_obj)
+                session.commit()
+            session.close()
             splat_msg = (
                 f" (splat: fera, willpower: {willpower}, gnosis: {gnosis}, rage: {rage}, "
                 f"glory: {glory}, honor: {honor}, wisdom: {wisdom}"
