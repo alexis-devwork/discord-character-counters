@@ -21,11 +21,16 @@ from counter import (
     create_all_tables,
     SplatEnum,  # <-- Import SplatEnum
 )
+from health import Health, HealthTypeEnum, Base as HealthBase
 
 
 Base = declarative_base()
 engine = create_engine("sqlite:///db.sqlite3")
-create_all_tables(engine)  # Ensure tables are created before anything else
+# Ensure all tables are created, including Health
+from counter import Base as CounterBase
+CounterBase.metadata.create_all(engine)
+HealthBase.metadata.create_all(engine)
+create_all_tables(engine)  # This can remain for other tables if needed
 SessionLocal = sessionmaker(bind=engine)
 
 class MyBot(commands.Bot):
@@ -276,6 +281,8 @@ def remove_character(user_id: str, character_name: str):
     # Gather details before deletion
     counters = session.query(Counter).filter_by(character_id=char.id).all()
     details = "\n".join([f"{c.counter}: {c.temp}/{c.perm}" for c in counters])
+    # Remove health trackers for this character
+    session.query(Health).filter_by(character_id=char.id).delete()
     session.delete(char)
     session.commit()
     session.close()

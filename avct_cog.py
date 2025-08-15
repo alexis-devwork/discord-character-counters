@@ -28,6 +28,9 @@ from utils import (
     generate_counters_output,
     splat_autocomplete,  # Make sure this is imported
 )
+from counter import UserCharacter
+from sqlalchemy.orm import joinedload  # <-- Add this import
+from health import Health, HealthTypeEnum
 
 class AvctCog(commands.Cog):
     def __init__(self, bot):
@@ -339,6 +342,16 @@ class AvctCog(commands.Cog):
                 return
 
             msg = generate_counters_output(counters, fully_unescape)
+
+            # Add health trackers to the bottom of the output
+            session = SessionLocal()
+            health_entries = session.query(Health).filter_by(character_id=character_id).all()
+            if health_entries:
+                msg += "\n\n**Health Trackers:**"
+                for h in health_entries:
+                    msg += f"\nHealth ({h.health_type.value}):\n{h.display()}"
+            session.close()
+
             await interaction.response.send_message(f"Counters for character '{character}':\n{msg}", ephemeral=True)
 
         async def counter_name_autocomplete_for_character(interaction: discord.Interaction, current: str):
@@ -522,6 +535,372 @@ class AvctCog(commands.Cog):
                     f"Counters for character '{character}':\n{msg}", ephemeral=True)
             else:
                 await interaction.response.send_message(error or "Counter or character not found.", ephemeral=True)
+
+        @self.add_group.command(name="customcounter", description="Add a custom counter to a character")
+        @discord.app_commands.autocomplete(character=character_name_autocomplete, category=category_autocomplete)
+        async def add_custom_counter(
+            interaction: discord.Interaction,
+            character: str,
+            counter: str,
+            temp: int,
+            perm: int,
+            category: str = None,
+            comment: str = None
+        ):
+            character = sanitize_string(character)
+            counter = sanitize_string(counter)
+            user_id = str(interaction.user.id)
+            character_id = get_character_id_by_user_and_name(user_id, character)
+            if character_id is None:
+                await interaction.response.send_message("Character not found for this user.", ephemeral=True)
+                return
+            # Default category to general if not provided
+            if not category:
+                category = CategoryEnum.general.value
+            success, error = add_counter(character_id, counter, temp, perm, category, comment)
+            if success:
+                await interaction.response.send_message(
+                    f"Custom counter '{counter}' added to character '{character}'.", ephemeral=True)
+            else:
+                await interaction.response.send_message(error or "Failed to add custom counter.", ephemeral=True)
+
+        @self.remove_group.command(name="character", description="Remove a character")
+        @discord.app_commands.autocomplete(character=character_name_autocomplete)
+        async def remove_character_cmd(interaction: discord.Interaction, character: str):
+            user_id = str(interaction.user.id)
+            success, error, details = remove_character(user_id, character)
+            if success:
+                await interaction.response.send_message(
+                    f"Character '{character}' removed.\nCounters removed:\n{details}", ephemeral=True)
+            else:
+                await interaction.response.send_message(error or "Failed to remove character.", ephemeral=True)
+
+        @self.remove_group.command(name="counter", description="Remove a counter from a character")
+        @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)
+        async def remove_counter_cmd(interaction: discord.Interaction, character: str, counter: str):
+            user_id = str(interaction.user.id)
+            character_id = get_character_id_by_user_and_name(user_id, character)
+            if character_id is None:
+                await interaction.response.send_message("Character not found for this user.", ephemeral=True)
+                return
+            success, error, details = remove_counter(character_id, counter)
+            if success:
+                await interaction.response.send_message(
+                    f"Counter '{counter}' removed from character '{character}'.\nCurrent counters:\n{details}", ephemeral=True)
+            else:
+                await interaction.response.send_message(error or "Failed to remove counter.", ephemeral=True)
+
+        @self.rename_group.command(name="character", description="Rename a character")
+        @discord.app_commands.autocomplete(character=character_name_autocomplete)
+        async def rename_character_cmd(interaction: discord.Interaction, character: str, new_name: str):
+            user_id = str(interaction.user.id)
+            success, error = rename_character(user_id, character, new_name)
+            if success:
+                await interaction.response.send_message(
+                    f"Character '{character}' renamed to '{new_name}'.", ephemeral=True)
+            else:
+                await interaction.response.send_message(error or "Failed to rename character.", ephemeral=True)
+
+        @self.rename_group.command(name="counter", description="Rename a counter for a character")
+        @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)
+        async def rename_counter_cmd(interaction: discord.Interaction, character: str, counter: str, new_name: str):
+            user_id = str(interaction.user.id)
+            character_id = get_character_id_by_user_and_name(user_id, character)
+            if character_id is None:
+                await interaction.response.send_message("Character not found for this user.", ephemeral=True)
+                return
+            success, error = rename_counter(character_id, counter, new_name)
+            if success:
+                await interaction.response.send_message(
+                    f"Counter '{counter}' renamed to '{new_name}' for character '{character}'.", ephemeral=True)
+            else:
+                await interaction.response.send_message(error or "Failed to rename counter.", ephemeral=True)
+
+        @self.edit_group.command(name="counter", description="Set temp or perm for a counter")
+        @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)
+        async def set_counter_cmd(
+            interaction: discord.Interaction,
+            character: str,
+            counter: str,
+            field: str,
+            value: int
+        ):
+            character = sanitize_string(character)
+            counter = sanitize_string(counter)
+            user_id = str(interaction.user.id)
+            character_id = get_character_id_by_user_and_name(user_id, character)
+            if character_id is None:
+                await interaction.response.send_message("Character not found for this user.", ephemeral=True)
+                return
+            if field not in ["temp", "perm"]:
+                await interaction.response.send_message("Field must be 'temp' or 'perm'.", ephemeral=True)
+                return
+            # Validate value
+            if not isinstance(value, int) or value < 0:
+                await interaction.response.send_message("Value must be a non-negative integer.", ephemeral=True)
+                return
+            session = SessionLocal()
+            counter_obj = session.query(get_counters_for_character(character_id)[0].__class__).filter_by(character_id=character_id, counter=counter).first()
+            if not counter_obj:
+                session.close()
+                await interaction.response.send_message("Counter not found.", ephemeral=True)
+                return
+            if field == "temp":
+                # For perm_is_maximum types, do not allow temp above perm or below zero
+                if counter_obj.counter_type in ["perm_is_maximum", "perm_is_maximum_bedlam"]:
+                    if value > counter_obj.perm:
+                        counter_obj.temp = counter_obj.perm
+                    elif value < 0:
+                        session.close()
+                        await interaction.response.send_message("Cannot set temp below zero.", ephemeral=True)
+                        return
+                    else:
+                        counter_obj.temp = value
+                else:
+                    if value < 0:
+                        session.close()
+                        await interaction.response.send_message("Cannot set temp below zero.", ephemeral=True)
+                        return
+                    counter_obj.temp = value
+            elif field == "perm":
+                if value < 0:
+                    session.close()
+                    await interaction.response.send_message("Cannot set perm below zero.", ephemeral=True)
+                    return
+                counter_obj.perm = value
+                # For perm_is_maximum types, adjust temp if perm is lowered below temp
+                if counter_obj.counter_type in ["perm_is_maximum", "perm_is_maximum_bedlam"]:
+                    if counter_obj.temp > counter_obj.perm:
+                        counter_obj.temp = counter_obj.perm
+            session.commit()
+            session.close()
+            counters = get_counters_for_character(character_id)
+            msg = generate_counters_output(counters, fully_unescape)
+            await interaction.response.send_message(
+                f"Set {field} for counter '{counter}' on character '{character}' to {value}.\n"
+                f"Counters for character '{character}':\n{msg}", ephemeral=True)
+
+        @self.edit_group.command(name="comment", description="Set comment for a counter")
+        @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)
+        async def set_comment_cmd(
+            interaction: discord.Interaction,
+            character: str,
+            counter: str,
+            comment: str
+        ):
+            character = sanitize_string(character)
+            counter = sanitize_string(counter)
+            user_id = str(interaction.user.id)
+            character_id = get_character_id_by_user_and_name(user_id, character)
+            if character_id is None:
+                await interaction.response.send_message("Character not found for this user.", ephemeral=True)
+                return
+            # Validate comment length
+            from config import MAX_COMMENT_LENGTH
+            if not validate_length("comment", comment, MAX_COMMENT_LENGTH):
+                await interaction.response.send_message(
+                    f"Comment must be at most {MAX_COMMENT_LENGTH} characters.", ephemeral=True)
+                return
+            success, error = set_counter_comment(character_id, counter, comment)
+            if success:
+                await interaction.response.send_message(
+                    f"Comment for counter '{counter}' on character '{character}' set.", ephemeral=True)
+            else:
+                await interaction.response.send_message(error or "Failed to set comment.", ephemeral=True)
+
+        @self.edit_group.command(name="category", description="Set category for a counter")
+        @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character, category=category_autocomplete)
+        async def set_category_cmd(
+            interaction: discord.Interaction,
+            character: str,
+            counter: str,
+            category: str
+        ):
+            character = sanitize_string(character)
+            counter = sanitize_string(counter)
+            user_id = str(interaction.user.id)
+            character_id = get_character_id_by_user_and_name(user_id, character)
+            if character_id is None:
+                await interaction.response.send_message("Character not found for this user.", ephemeral=True)
+                return
+            # Validate category length
+            from config import MAX_FIELD_LENGTH
+            if not validate_length("category", category, MAX_FIELD_LENGTH):
+                await interaction.response.send_message(
+                    f"Category must be at most {MAX_FIELD_LENGTH} characters.", ephemeral=True)
+                return
+            success, error = set_counter_category(character_id, counter, category)
+            if success:
+                await interaction.response.send_message(
+                    f"Category for counter '{counter}' on character '{character}' set to '{category}'.", ephemeral=True)
+            else:
+                await interaction.response.send_message(error or "Failed to set category.", ephemeral=True)
+
+        @self.avct_group.command(name="debug", description="Show all properties of all counters for all characters for the current user (visible to everyone)")
+        async def debug(interaction: discord.Interaction):
+            user_id = str(interaction.user.id)
+            session = SessionLocal()
+            chars = session.query(UserCharacter).options(joinedload(UserCharacter.counters)).filter_by(user=user_id).all()
+            debug_lines = []
+            for char in chars:
+                debug_lines.append(f"Character: {char.character} (ID: {char.id})")
+                for c in char.counters:
+                    debug_lines.append(
+                        f"  Counter: {c.counter} | temp: {c.temp} | perm: {c.perm} | type: {c.counter_type} | category: {c.category} | comment: {c.comment} | bedlam: {getattr(c, 'bedlam', None)}"
+                    )
+                # Add health details for this character
+                health_entries = session.query(Health).filter_by(character_id=char.id).all()
+                for h in health_entries:
+                    debug_lines.append(f"  Health ({h.health_type.value}):")
+                    # Raw values
+                    import json
+                    raw_levels = json.loads(h.health_levels)
+                    debug_lines.append(f"    Raw health_levels: {raw_levels}")
+                    raw_damage = json.loads(h.damage)
+                    debug_lines.append(f"    Raw damage: {raw_damage}")
+                    # Formatted display
+                    debug_lines.append(h.display())
+            session.close()
+            debug_text = "\n".join(debug_lines) or "No data found."
+            # Discord message limit is 2000 characters
+            if len(debug_text) > 2000:
+                chunks = [debug_text[i:i+1990] for i in range(0, len(debug_text), 1990)]
+                for idx, chunk in enumerate(chunks):
+                    if idx == 0:
+                        await interaction.response.send_message(chunk, ephemeral=False)
+                    else:
+                        await interaction.followup.send(chunk, ephemeral=False)
+            else:
+                await interaction.response.send_message(debug_text, ephemeral=False)
+
+        async def health_type_autocomplete(interaction: discord.Interaction, current: str):
+            return [
+                discord.app_commands.Choice(name=ht.value, value=ht.value)
+                for ht in HealthTypeEnum
+                if current.lower() in ht.value.lower()
+            ][:25]
+
+        async def damage_type_autocomplete(interaction: discord.Interaction, current: str):
+            from health import DamageEnum
+            return [
+                discord.app_commands.Choice(name=dt.value, value=dt.value)
+                for dt in DamageEnum
+                if current.lower() in dt.value.lower()
+            ][:25]
+
+        # Remove health tracker
+        @self.remove_group.command(name="health", description="Remove a health tracker from a character by type")
+        @discord.app_commands.autocomplete(character=character_name_autocomplete, health_type=health_type_autocomplete)
+        async def remove_health(
+            interaction: discord.Interaction,
+            character: str,
+            health_type: str
+        ):
+            character = sanitize_string(character)
+            user_id = str(interaction.user.id)
+            character_id = get_character_id_by_user_and_name(user_id, character)
+            if character_id is None:
+                await interaction.response.send_message("Character not found for this user.", ephemeral=True)
+                return
+            session = SessionLocal()
+            from health import HealthTypeEnum
+            try:
+                ht_enum = HealthTypeEnum(health_type)
+            except ValueError:
+                session.close()
+                await interaction.response.send_message("Invalid health type.", ephemeral=True)
+                return
+            health_obj = session.query(Health).filter_by(character_id=character_id, health_type=ht_enum).first()
+            if not health_obj:
+                session.close()
+                await interaction.response.send_message("Health tracker not found for this character and type.", ephemeral=True)
+                return
+            session.delete(health_obj)
+            session.commit()
+            session.close()
+            await interaction.response.send_message(
+                f"Health tracker ({health_type}) removed from character '{character}'.", ephemeral=True
+            )
+
+        # Add damage to health tracker
+        @self.avct_group.command(name="damage", description="Add damage to a health tracker")
+        @discord.app_commands.autocomplete(character=character_name_autocomplete, health_type=health_type_autocomplete, damage_type=damage_type_autocomplete)
+        async def damage(
+            interaction: discord.Interaction,
+            character: str,
+            health_type: str,
+            damage_type: str,
+            levels: int
+        ):
+            character = sanitize_string(character)
+            user_id = str(interaction.user.id)
+            character_id = get_character_id_by_user_and_name(user_id, character)
+            if character_id is None:
+                await interaction.response.send_message("Character not found for this user.", ephemeral=True)
+                return
+            session = SessionLocal()
+            from health import HealthTypeEnum, DamageEnum
+            try:
+                ht_enum = HealthTypeEnum(health_type)
+                dt_enum = DamageEnum(damage_type)
+            except ValueError:
+                session.close()
+                await interaction.response.send_message("Invalid health or damage type.", ephemeral=True)
+                return
+            health_obj = session.query(Health).filter_by(character_id=character_id, health_type=ht_enum).first()
+            if not health_obj:
+                session.close()
+                await interaction.response.send_message("Health tracker not found for this character and type.", ephemeral=True)
+                return
+            # Call add_damage while the instance is still attached to the session
+            msg = health_obj.add_damage(levels, dt_enum)
+            session.add(health_obj)  # Ensure changes are tracked
+            session.commit()
+            # Refresh the instance to get updated values
+            session.refresh(health_obj)
+            output = health_obj.display()
+            session.close()
+            if msg:
+                await interaction.response.send_message(f"{msg}\n{output}", ephemeral=True)
+            else:
+                await interaction.response.send_message(output, ephemeral=True)
+
+        # Heal damage from health tracker
+        @self.avct_group.command(name="heal", description="Heal damage from a health tracker")
+        @discord.app_commands.autocomplete(character=character_name_autocomplete, health_type=health_type_autocomplete)
+        async def heal(
+            interaction: discord.Interaction,
+            character: str,
+            health_type: str,
+            levels: int
+        ):
+            character = sanitize_string(character)
+            user_id = str(interaction.user.id)
+            character_id = get_character_id_by_user_and_name(user_id, character)
+            if character_id is None:
+                await interaction.response.send_message("Character not found for this user.", ephemeral=True)
+                return
+            session = SessionLocal()
+            from health import HealthTypeEnum
+            try:
+                ht_enum = HealthTypeEnum(health_type)
+            except ValueError:
+                session.close()
+                await interaction.response.send_message("Invalid health type.", ephemeral=True)
+                return
+            health_obj = session.query(Health).filter_by(character_id=character_id, health_type=ht_enum).first()
+            if not health_obj:
+                session.close()
+                await interaction.response.send_message("Health tracker not found for this character and type.", ephemeral=True)
+                return
+            # Call remove_damage while the instance is still attached to the session
+            health_obj.remove_damage(levels)
+            session.add(health_obj)  # Ensure changes are tracked
+            session.commit()
+            session.refresh(health_obj)  # Refresh to get updated values
+            output = health_obj.display()
+            session.close()
+            await interaction.response.send_message(output, ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(AvctCog(bot))
