@@ -26,6 +26,7 @@ from utils import (
     add_predefined_counter,
     SessionLocal,
     generate_counters_output,
+    splat_autocomplete,  # Make sure this is imported
 )
 
 class AvctCog(commands.Cog):
@@ -52,15 +53,208 @@ class AvctCog(commands.Cog):
         self.bot.tree.add_command(self.avct_group)
 
     def register_commands(self):
-        @self.add_group.command(name="character", description="Add a character")
-        async def add_character(interaction: discord.Interaction, character: str):
+        # --- Add character for sorc ---
+        @self.add_group.command(name="character_sorc", description="Add a Sorcerer character (requires willpower and mana)")
+        async def add_character_sorc(
+            interaction: discord.Interaction,
+            character: str,
+            willpower: int,
+            mana: int
+        ):
+            character = sanitize_string(character)
+            user_id = str(interaction.user.id)
+
+            # Save character
+            success, error = add_user_character(user_id, character)
+            if not success:
+                await interaction.response.send_message(error, ephemeral=True)
+                return
+
+            character_id = get_character_id_by_user_and_name(user_id, character)
+            add_predefined_counter(
+                character_id,
+                PredefinedCounterEnum.willpower.value,
+                willpower,
+                ""
+            )
+            add_predefined_counter(
+                character_id,
+                PredefinedCounterEnum.mana.value,
+                mana,
+                ""
+            )
+            splat_msg = f" (splat: sorc, willpower: {willpower}, mana: {mana})"
+            await interaction.response.send_message(
+                f"Character '{character}'{splat_msg} added for you.",
+                ephemeral=True
+            )
+
+        # --- Add character for vampire ---
+        @self.add_group.command(name="character_vampire", description="Add a Vampire character (requires blood_pool and willpower)")
+        async def add_character_vampire(
+            interaction: discord.Interaction,
+            character: str,
+            blood_pool: int,
+            willpower: int
+        ):
+            character = sanitize_string(character)
+            user_id = str(interaction.user.id)
+
+            # Save character
+            success, error = add_user_character(user_id, character)
+            if not success:
+                await interaction.response.send_message(error, ephemeral=True)
+                return
+
+            character_id = get_character_id_by_user_and_name(user_id, character)
+            add_predefined_counter(
+                character_id,
+                PredefinedCounterEnum.blood_pool.value,
+                blood_pool,
+                ""
+            )
+            add_predefined_counter(
+                character_id,
+                PredefinedCounterEnum.willpower.value,
+                willpower,
+                ""
+            )
+            splat_msg = f" (splat: vampire, blood_pool: {blood_pool}, willpower: {willpower})"
+            await interaction.response.send_message(
+                f"Character '{character}'{splat_msg} added for you.",
+                ephemeral=True
+            )
+
+        # --- Add character for changeling ---
+        @self.add_group.command(
+            name="character_changeling",
+            description="Add a Changeling character (requires willpower_fae, glamour, nightmare, banality)"
+        )
+        async def add_character_changeling(
+            interaction: discord.Interaction,
+            character: str,
+            willpower_fae: int,
+            glamour: int,
+            nightmare: int,
+            banality: int
+        ):
             character = sanitize_string(character)
             user_id = str(interaction.user.id)
             success, error = add_user_character(user_id, character)
-            if success:
-                await interaction.response.send_message(f"Character '{character}' added for you.", ephemeral=True)
-            else:
+            if not success:
                 await interaction.response.send_message(error, ephemeral=True)
+                return
+
+            character_id = get_character_id_by_user_and_name(user_id, character)
+            add_predefined_counter(
+                character_id,
+                PredefinedCounterEnum.willpower_fae.value,
+                willpower_fae,
+                ""
+            )
+            add_predefined_counter(
+                character_id,
+                PredefinedCounterEnum.glamour.value,
+                glamour,
+                ""
+            )
+            add_predefined_counter(
+                character_id,
+                PredefinedCounterEnum.nightmare.value,
+                nightmare,
+                ""
+            )
+            add_predefined_counter(
+                character_id,
+                PredefinedCounterEnum.banality.value,
+                banality,
+                ""
+            )
+            splat_msg = (
+                f" (splat: changeling, willpower_fae: {willpower_fae}, glamour: {glamour}, "
+                f"nightmare: {nightmare}, banality: {banality})"
+            )
+            await interaction.response.send_message(
+                f"Character '{character}'{splat_msg} added for you.",
+                ephemeral=True
+            )
+
+        # --- Add character for fera ---
+        @self.add_group.command(
+            name="character_fera",
+            description="Add a Fera character (requires willpower, gnosis, rage, glory, honor, wisdom)"
+        )
+        async def add_character_fera(
+            interaction: discord.Interaction,
+            character: str,
+            willpower: int,
+            gnosis: int,
+            rage: int,
+            glory: int,
+            honor: int,
+            wisdom: int,
+            honor_replacement: str = None,
+            glory_replacement: str = None,
+            wisdom_replacement: str = None
+        ):
+            character = sanitize_string(character)
+            user_id = str(interaction.user.id)
+            success, error = add_user_character(user_id, character)
+            if not success:
+                await interaction.response.send_message(error, ephemeral=True)
+                return
+
+            character_id = get_character_id_by_user_and_name(user_id, character)
+            add_predefined_counter(
+                character_id,
+                PredefinedCounterEnum.willpower.value,
+                willpower,
+                ""
+            )
+            add_predefined_counter(
+                character_id,
+                PredefinedCounterEnum.gnosis.value,
+                gnosis,
+                ""
+            )
+            add_predefined_counter(
+                character_id,
+                PredefinedCounterEnum.rage.value,
+                rage,
+                ""
+            )
+            add_predefined_counter(
+                character_id,
+                PredefinedCounterEnum.glory.value,
+                glory,
+                "",
+                glory_replacement if glory_replacement else None
+            )
+            add_predefined_counter(
+                character_id,
+                PredefinedCounterEnum.honor.value,
+                honor,
+                "",
+                honor_replacement if honor_replacement else None
+            )
+            add_predefined_counter(
+                character_id,
+                PredefinedCounterEnum.wisdom.value,
+                wisdom,
+                "",
+                wisdom_replacement if wisdom_replacement else None
+            )
+            splat_msg = (
+                f" (splat: fera, willpower: {willpower}, gnosis: {gnosis}, rage: {rage}, "
+                f"glory: {glory}, honor: {honor}, wisdom: {wisdom}"
+                f"{', glory_replacement: ' + glory_replacement if glory_replacement else ''}"
+                f"{', honor_replacement: ' + honor_replacement if honor_replacement else ''}"
+                f"{', wisdom_replacement: ' + wisdom_replacement if wisdom_replacement else ''})"
+            )
+            await interaction.response.send_message(
+                f"Character '{character}'{splat_msg} added for you.",
+                ephemeral=True
+            )
 
         async def predefined_counter_type_autocomplete(interaction: discord.Interaction, current: str):
             return [

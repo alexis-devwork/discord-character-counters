@@ -18,7 +18,8 @@ from counter import (
     Counter,
     CounterFactory,
     UserCharacter,
-    create_all_tables,  # import the new function
+    create_all_tables,
+    SplatEnum,  # <-- Import SplatEnum
 )
 
 
@@ -209,6 +210,13 @@ async def category_autocomplete(interaction: discord.Interaction, current: str):
     return [
         discord.app_commands.Choice(name=cat, value=cat)
         for cat in categories if current.lower() in cat.lower()
+    ][:25]
+
+async def splat_autocomplete(interaction: discord.Interaction, current: str):
+    return [
+        discord.app_commands.Choice(name=s.value, value=s.value)
+        for s in SplatEnum
+        if current.lower() in s.value.lower()
     ][:25]
 
 
