@@ -33,10 +33,12 @@ class AvctCog(commands.Cog):
         self.bot = bot
         self.avct_group = discord.app_commands.Group(name="avct", description="AVCT commands")
         self.add_group = app_commands.Group(name="add", description="Add a character or counter")
-        self.character_group = discord.app_commands.Group(name="character", description="Character related commands")
+        self.character_group = app_commands.Group(name="character", description="Character related commands")
         self.rename_group = app_commands.Group(name="rename", description="Rename a character or counter")
         self.remove_group = app_commands.Group(name="remove", description="Remove a character or counter")
         self.edit_group = app_commands.Group(name="edit", description="Edit or rename counter/category/comment")
+        self.spend_group = app_commands.Group(name="spend", description="Spend from a counter")
+        self.gain_group = app_commands.Group(name="gain", description="Gain to a counter")  # <-- new group
         self.register_commands()
 
     async def cog_load(self):
@@ -45,6 +47,8 @@ class AvctCog(commands.Cog):
         self.avct_group.add_command(self.rename_group)
         self.avct_group.add_command(self.remove_group)
         self.avct_group.add_command(self.edit_group)
+        self.avct_group.add_command(self.spend_group)
+        self.avct_group.add_command(self.gain_group)  # <-- add new group to avct
         self.bot.tree.add_command(self.avct_group)
 
     def register_commands(self):
@@ -72,7 +76,8 @@ class AvctCog(commands.Cog):
             character: str,
             counter_type: str,
             starting: int,
-            comment: str = None
+            comment: str = None,
+            name_override: str = None
         ):
             character = sanitize_string(character)
             user_id = str(interaction.user.id)
@@ -87,8 +92,17 @@ class AvctCog(commands.Cog):
                 await interaction.response.send_message("Invalid counter type selected.", ephemeral=True)
                 return
 
-            # Pass the string value, not the Enum, to add_predefined_counter
-            success, error = add_predefined_counter(character_id, counter_enum.value, starting, comment)
+            # Use name_override as override_name for item_with_charges, glory, honor, wisdom if provided
+            override_name = None
+            if counter_enum in (
+                PredefinedCounterEnum.item_with_charges,
+                PredefinedCounterEnum.glory,
+                PredefinedCounterEnum.honor,
+                PredefinedCounterEnum.wisdom
+            ) and name_override:
+                override_name = name_override
+
+            success, error = add_predefined_counter(character_id, counter_enum.value, starting, comment, override_name)
             if success:
                 await interaction.response.send_message(
                     f"{counter_type.title()} counter added to character '{character}'.", ephemeral=True)
@@ -122,22 +136,7 @@ class AvctCog(commands.Cog):
                 await interaction.response.send_message("No counters found for this character.", ephemeral=True)
                 return
 
-            from collections import defaultdict
-            grouped = defaultdict(list)
-            for c in counters:
-                grouped[c.category].append(c)
-
-            msg_lines = []
-            for cat in sorted(grouped.keys(), key=lambda x: x.lower()):
-                cat_title = f"**{cat.capitalize()}**"
-                msg_lines.append(cat_title)
-                for c in grouped[cat]:
-                    line = c.generate_display(fully_unescape)
-                    msg_lines.append(line)
-                    if c.comment:
-                        msg_lines.append(f"-# {fully_unescape(c.comment)}")
-
-            msg = "\n".join(msg_lines).strip()
+            msg = generate_counters_output(counters, fully_unescape)
             await interaction.response.send_message(f"Counters for character '{character}':\n{msg}", ephemeral=True)
 
         async def counter_name_autocomplete_for_character(interaction: discord.Interaction, current: str):
@@ -418,6 +417,46 @@ class AvctCog(commands.Cog):
                 f"Bedlam for counter '{counter}' on character '{character}' changed by {delta}. New value: {new_bedlam}",
                 ephemeral=True
             )
+
+        @self.spend_group.command(name="counter", description="Spend (decrement by points) from a counter for a character")
+        @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)
+        async def spend_counter(interaction: discord.Interaction, character: str, counter: str, points: int = 1):
+            character = sanitize_string(character)
+            counter = sanitize_string(counter)
+            user_id = str(interaction.user.id)
+            character_id = get_character_id_by_user_and_name(user_id, character)
+            if character_id is None:
+                await interaction.response.send_message("Character not found for this user.", ephemeral=True)
+                return
+            success, error = update_counter(character_id, counter, "temp", -points)
+            counters = get_counters_for_character(character_id)
+            if success:
+                msg = generate_counters_output(counters, fully_unescape)
+                await interaction.response.send_message(
+                    f"Spent {points} from counter '{counter}' on character '{character}'.\n"
+                    f"Counters for character '{character}':\n{msg}", ephemeral=True)
+            else:
+                await interaction.response.send_message(error or "Counter or character not found.", ephemeral=True)
+
+        @self.gain_group.command(name="counter", description="Gain (increment by points) to a counter for a character")
+        @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)
+        async def gain_counter(interaction: discord.Interaction, character: str, counter: str, points: int = 1):
+            character = sanitize_string(character)
+            counter = sanitize_string(counter)
+            user_id = str(interaction.user.id)
+            character_id = get_character_id_by_user_and_name(user_id, character)
+            if character_id is None:
+                await interaction.response.send_message("Character not found for this user.", ephemeral=True)
+                return
+            success, error = update_counter(character_id, counter, "temp", points)
+            counters = get_counters_for_character(character_id)
+            if success:
+                msg = generate_counters_output(counters, fully_unescape)
+                await interaction.response.send_message(
+                    f"Gained {points} to counter '{counter}' on character '{character}'.\n"
+                    f"Counters for character '{character}':\n{msg}", ephemeral=True)
+            else:
+                await interaction.response.send_message(error or "Counter or character not found.", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(AvctCog(bot))
