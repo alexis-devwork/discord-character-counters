@@ -1,5 +1,7 @@
 .env
 .env.local
 .env.prod
-.idea
 __pycache__
+.idea
+.idea/*
+.idea/copilotDiffState.xml
