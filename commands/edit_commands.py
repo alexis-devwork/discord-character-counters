@@ -16,6 +16,7 @@ from utils import (
 )
 from utils import characters_collection
 from bson import ObjectId
+from health import Health
 from .autocomplete import counter_name_autocomplete_for_character
 
 def register_edit_commands(cog):
@@ -83,6 +84,8 @@ def register_edit_commands(cog):
                 c["temp"] = target.temp
         characters_collection.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": counters_list}})
         return get_counters_for_character(character_id)
+
+    # These all stay in the configav edit group which was already defined in avct_cog.py
 
     @cog.edit_group.command(name="counter", description="Set temp or perm for a counter")
     @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)
@@ -247,54 +250,81 @@ def register_edit_commands(cog):
         else:
             await interaction.response.send_message(error or "Failed to rename character.", ephemeral=True)
 
-    # --- Spend counter ---
-    @cog.spend_group.command(name="counter", description="Decrement the temp value of a counter")
+    # Helper function to generate character counter display
+    async def _display_character_counters(interaction, character, character_id):
+        """Generate and display counters for a character after an action."""
+        counters = get_counters_for_character(character_id)
+        msg = generate_counters_output(counters, fully_unescape)
+
+        # Add health trackers to the output
+        from bson import ObjectId
+        char_doc = characters_collection.find_one({"_id": ObjectId(character_id)})
+        health_entries = char_doc.get("health", []) if char_doc else []
+        if health_entries:
+            msg += "\n\n**Health Trackers:**"
+            for h in health_entries:
+                health_obj = Health(
+                    health_type=h.get("health_type"),
+                    damage=h.get("damage", []),
+                    health_levels=h.get("health_levels", None)
+                )
+                msg += f"\nHealth ({health_obj.health_type}):\n{health_obj.display()}"
+
+        return msg
+
+    # Move plus and minus commands directly to avct_group
+    @cog.avct_group.command(name="plus", description="Add points to a counter")
     @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)
-    async def spend_counter_cmd(
+    async def plus_cmd(
         interaction: discord.Interaction,
         character: str,
         counter: str,
         points: int = 1
     ):
-        await _handle_counter_update(interaction, character, counter, "temp", -points, "Spent", "from")
-
-    # --- Gain counter ---
-    @cog.gain_group.command(name="counter", description="Increment the temp value of a counter")
-    @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)
-    async def gain_counter_cmd(
-        interaction: discord.Interaction,
-        character: str,
-        counter: str,
-        points: int = 1
-    ):
-        await _handle_counter_update(interaction, character, counter, "temp", points, "Gained", "to")
-
-    async def _handle_counter_update(interaction, character, counter, field, delta, action_verb, preposition):
-        """Handle the update of a counter with appropriate feedback messages."""
         character = sanitize_string(character)
         counter = sanitize_string(counter)
         user_id = str(interaction.user.id)
-
-        # Get character ID
         character_id = get_character_id_by_user_and_name(user_id, character)
+
         if character_id is None:
-            await _handle_character_not_found(interaction)
+            await interaction.response.send_message("Character not found for this user.", ephemeral=True)
             return
 
-        # Update counter
-        success, error = update_counter(character_id, counter, field, delta)
-
-        # Handle result
-        points_abs = abs(delta)
-        point_text = f"{points_abs} point(s)"
+        success, error = update_counter(character_id, counter, "temp", points)
 
         if success:
+            # Generate the same output as character counters
+            msg = await _display_character_counters(interaction, character, character_id)
             await interaction.response.send_message(
-                f"{action_verb} {point_text} {preposition} counter '{counter}' on character '{character}'.",
-                ephemeral=True
-            )
+                f"Added {points} point(s) to counter '{counter}' on character '{character}'.\n\n"
+                f"Counters for character '{character}':\n{msg}", ephemeral=True)
         else:
+            await interaction.response.send_message(error or "Failed to add points to counter.", ephemeral=True)
+
+    @cog.avct_group.command(name="minus", description="Remove points from a counter")
+    @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)
+    async def minus_cmd(
+        interaction: discord.Interaction,
+        character: str,
+        counter: str,
+        points: int = 1
+    ):
+        character = sanitize_string(character)
+        counter = sanitize_string(counter)
+        user_id = str(interaction.user.id)
+        character_id = get_character_id_by_user_and_name(user_id, character)
+
+        if character_id is None:
+            await interaction.response.send_message("Character not found for this user.", ephemeral=True)
+            return
+
+        success, error = update_counter(character_id, counter, "temp", -points)
+
+        if success:
+            # Generate the same output as character counters
+            msg = await _display_character_counters(interaction, character, character_id)
             await interaction.response.send_message(
-                error or f"Failed to update counter.",
-                ephemeral=True
-            )
+                f"Removed {points} point(s) from counter '{counter}' on character '{character}'.\n\n"
+                f"Counters for character '{character}':\n{msg}", ephemeral=True)
+        else:
+            await interaction.response.send_message(error or "Failed to remove points from counter.", ephemeral=True)

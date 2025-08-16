@@ -3,7 +3,8 @@ from utils import characters_collection
 from health import Health
 
 def register_debug_commands(cog):
-    @cog.avct_group.command(
+    # Move to configav group
+    @cog.configav_group.command(
         name="debug",
         description="Show all properties of all counters for all characters for the current user (visible to everyone)"
     )

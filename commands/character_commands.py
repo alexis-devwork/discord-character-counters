@@ -82,38 +82,14 @@ def register_character_commands(cog):
         characters_collection.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": counters_list}})
         return get_counters_for_character(character_id)
 
-    def _generate_health_trackers_output(character_id):
-        """Generate output for health trackers."""
-        char_doc = characters_collection.find_one({"_id": ObjectId(character_id)})
-        health_entries = char_doc.get("health", []) if char_doc else []
-
-        if not health_entries:
-            return ""
-
-        output = "\n\n**Health Trackers:**"
-        for h in health_entries:
-            health_obj = Health(
-                health_type=h.get("health_type"),
-                damage=h.get("damage", []),
-                health_levels=h.get("health_levels", None)
-            )
-            output += f"\nHealth ({health_obj.health_type}):\n{health_obj.display()}"
-
-        return output
-
-    @cog.character_group.command(name="list", description="List your characters")
-    async def list_characters(interaction: discord.Interaction):
-        user_id = str(interaction.user.id)
-        entries = get_all_user_characters_for_user(user_id)
-        if not entries:
-            await interaction.response.send_message("No characters found.", ephemeral=True)
-            return
-        msg = "\n".join([f"ID: {getattr(e, 'id', 'N/A')}, Character: {e.character}" for e in entries])
-        await interaction.response.send_message(f"Characters for you:\n{msg}", ephemeral=True)
-
-    @cog.character_group.command(name="counters", description="List counters for a character")
+    # Add show command directly to avct_group
+    @cog.avct_group.command(name="show", description="Show all counters and health for a character")
     @discord.app_commands.autocomplete(character=character_name_autocomplete)
-    async def counters(interaction: discord.Interaction, character: str):
+    async def show_character(
+        interaction: discord.Interaction,
+        character: str,
+        public: bool = False  # Optional boolean flag to make response visible to everyone
+    ):
         user_id = str(interaction.user.id)
         character = sanitize_string(character)
         character_id = get_character_id_by_user_and_name(user_id, character)
@@ -121,7 +97,7 @@ def register_character_commands(cog):
         if character_id is None:
             await interaction.response.send_message(
                 "Character not found for this user. Please select a character from the dropdown/autocomplete.",
-                ephemeral=True
+                ephemeral=True  # Always keep error messages ephemeral
             )
             return
 
@@ -133,10 +109,35 @@ def register_character_commands(cog):
         # Generate counters output
         msg = generate_counters_output(counters, fully_unescape)
 
-        # Add health trackers
-        msg += _generate_health_trackers_output(character_id)
+        # Add health trackers to the bottom of the output
+        char_doc = characters_collection.find_one({"_id": ObjectId(character_id)})
+        health_entries = char_doc.get("health", []) if char_doc else []
+        if health_entries:
+            msg += "\n\n**Health Trackers:**"
+            for h in health_entries:
+                health_obj = Health(
+                    health_type=h.get("health_type"),
+                    damage=h.get("damage", []),
+                    health_levels=h.get("health_levels", None)
+                )
+                msg += f"\nHealth ({health_obj.health_type}):\n{health_obj.display()}"
 
-        await interaction.response.send_message(f"Counters for character '{character}':\n{msg}", ephemeral=True)
+        # Set ephemeral based on the public flag (ephemeral=True when public=False)
+        await interaction.response.send_message(
+            f"Counters for character '{character}':\n{msg}",
+            ephemeral=not public  # Make visible to everyone if public=True
+        )
+
+    # Other character commands moved to configav_group's character_group
+    @cog.character_group.command(name="list", description="List your characters")
+    async def list_characters(interaction: discord.Interaction):
+        user_id = str(interaction.user.id)
+        entries = get_all_user_characters_for_user(user_id)
+        if not entries:
+            await interaction.response.send_message("No characters found.", ephemeral=True)
+            return
+        msg = "\n".join([f"ID: {getattr(e, 'id', 'N/A')}, Character: {e.character}" for e in entries])
+        await interaction.response.send_message(f"Characters for you:\n{msg}", ephemeral=True)
 
     @cog.character_group.command(name="temp", description="Set temp value for a counter")
     @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)
