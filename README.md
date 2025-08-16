@@ -1,6 +1,6 @@
 # AVCT Discord Bot
 
-A flexible Discord bot for managing tabletop RPG characters, counters, and health/damage tracking. Built with `discord.py` and SQLAlchemy, this bot supports multiple splats (character types), custom counters, health systems, and advanced command autocompletion.
+A flexible Discord bot for managing tabletop RPG characters, counters, and health/damage tracking. Built with `discord.py` and pymongo, this bot supports multiple splats (character types), custom counters, health systems, and advanced command autocompletion.
 
 ---
 

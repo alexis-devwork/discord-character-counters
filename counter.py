@@ -1,10 +1,5 @@
-from sqlalchemy import create_engine, Column, Integer, String, ForeignKey
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship, joinedload
 import enum
 
-Base = declarative_base()
-
-# Minimal UserCharacter class for ORM relationship
 class UserCharacter:
     def __init__(self, user, character, counters=None, health=None, id=None):
         self.user = user
@@ -264,8 +259,6 @@ class CounterFactory:
             comment=comment
         )
 
-def create_all_tables(engine):
-    Base.metadata.create_all(engine)
 
 class SplatEnum(enum.Enum):
     sorc = "sorc"
@@ -273,5 +266,3 @@ class SplatEnum(enum.Enum):
     vampire = "vampire"
     fera = "fera"
 
-engine = create_engine("sqlite:///:memory:")  # Or your actual database URI
-SessionLocal = sessionmaker(bind=engine)
