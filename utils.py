@@ -9,6 +9,7 @@ from config import (
     MAX_COUNTERS_PER_CHARACTER,
     MAX_FIELD_LENGTH,
     MAX_COMMENT_LENGTH,
+    DISPLAY_MODE,
 )
 from pymongo import MongoClient
 from counter import (
@@ -528,7 +529,7 @@ def _add_ordered_categories(grouped_counters, msg_lines, fully_unescape_func):
 
             # Add sorted counters
             for c in sorted(grouped_counters[cat], key=lambda x: x.counter.lower()):
-                msg_lines.append(c.generate_display(fully_unescape_func))
+                msg_lines.append(c.generate_display(fully_unescape_func, DISPLAY_MODE))
                 if c.comment:
                     msg_lines.append(f"-# {fully_unescape_func(c.comment)}")
 
@@ -545,6 +546,6 @@ def _add_remaining_categories(grouped_counters, shown_categories, msg_lines, ful
 
             # Add sorted counters
             for c in sorted(grouped_counters[cat], key=lambda x: x.counter.lower()):
-                msg_lines.append(c.generate_display(fully_unescape_func))
+                msg_lines.append(c.generate_display(fully_unescape_func, DISPLAY_MODE))
                 if c.comment:
                     msg_lines.append(f"-# {fully_unescape_func(c.comment)}")
