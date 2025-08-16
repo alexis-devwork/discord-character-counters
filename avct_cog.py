@@ -1,15 +1,42 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
+import importlib
+import pkgutil
 
-# Command modules
-from commands.character_commands import register_character_commands
-from commands.counter_commands import register_counter_commands
-from commands.health_commands import register_health_commands
-from commands.edit_commands import register_edit_commands
-from commands.add_commands import register_add_commands
-from commands.debug_commands import register_debug_commands
-from commands.remove_commands import register_remove_commands
+# --- Command registry and decorator ---
+COMMAND_REGISTRY = []
+
+def register_command(group_name):
+    """
+    Decorator to register a command function to a specific group.
+    Usage:
+        @register_command("group_name")
+        def register_my_commands(cog):
+            ...
+    """
+    def decorator(command_func):
+        COMMAND_REGISTRY.append((group_name, command_func))
+        return command_func
+    return decorator
+
+def discover_and_register_commands(cog):
+    """
+    Discover all modules in the 'commands' package and register their commands.
+    Each command module should use @register_command("group_name") on a function
+    that takes the cog and registers commands to the appropriate group.
+    """
+    import commands
+    # Dynamically import all modules in the 'commands' package
+    for _, modname, _ in pkgutil.iter_modules(commands.__path__):
+        module = importlib.import_module(f"commands.{modname}")
+        # The module should call @register_command, so registry is populated
+
+    # Register all commands to their groups
+    for group_name, command_func in COMMAND_REGISTRY:
+        group = getattr(cog, group_name, None)
+        if group:
+            command_func(cog)  # Pass cog as positional argument
 
 class AvctCog(commands.Cog):
     def __init__(self, bot):
@@ -26,8 +53,8 @@ class AvctCog(commands.Cog):
         self.edit_group = app_commands.Group(name="edit", description="Edit or rename counter/category/comment")
         self.character_group = app_commands.Group(name="character", description="Character related commands")
 
-        # Register all commands
-        self.register_commands()
+        # Discover and register all commands
+        discover_and_register_commands(self)
 
     async def cog_load(self):
         # Add subgroups to configav group
@@ -41,15 +68,10 @@ class AvctCog(commands.Cog):
         self.bot.tree.add_command(self.avct_group)
         self.bot.tree.add_command(self.configav_group)
 
-    def register_commands(self):
-        # Register commands from each module
-        register_character_commands(self)
-        register_counter_commands(self)
-        register_health_commands(self)
-        register_edit_commands(self)
-        register_add_commands(self)
-        register_debug_commands(self)
-        register_remove_commands(self)
-
 async def setup(bot):
     await bot.add_cog(AvctCog(bot))
+
+# Documentation:
+# - To add a new command, create a function in a module under 'commands' and decorate it with @register_command("group_name").
+# - The function should take the cog as an argument and register commands to the specified group.
+# - Supported group names: avct_group, add_group, rename_group, remove_group, edit_group, character_group.

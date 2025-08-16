@@ -5,20 +5,22 @@ from utils import (
     add_user_character,
     get_character_id_by_user_and_name,
     add_counter,
-    character_name_autocomplete,
-    category_autocomplete,
     PredefinedCounterEnum,
     add_predefined_counter,
     CategoryEnum,
 )
-from utils import characters_collection
+from utils import characters_collection, CharacterRepository
 from health import Health, HealthTypeEnum
 from bson import ObjectId
 from .autocomplete import (
+    character_name_autocomplete,
+    category_autocomplete,
     predefined_counter_type_autocomplete,
     health_type_autocomplete
 )
+from avct_cog import register_command
 
+@register_command("add_group")
 def register_add_commands(cog):
     # --- Helper functions ---
     async def _handle_character_creation_failure(interaction, error):
@@ -28,24 +30,24 @@ def register_add_commands(cog):
 
     def _add_health_tracker(character_id, health_type):
         """Add a health tracker of the specified type to a character."""
-        char_doc = characters_collection.find_one({"_id": ObjectId(character_id)})
+        char_doc = CharacterRepository.find_one({"_id": ObjectId(character_id)})
         if char_doc:
             health_obj = Health(health_type=health_type)
             health_list = char_doc.get("health", [])
             health_list.append(health_obj.__dict__)
-            characters_collection.update_one({"_id": ObjectId(character_id)}, {"$set": {"health": health_list}})
+            CharacterRepository.update_one({"_id": ObjectId(character_id)}, {"$set": {"health": health_list}})
             return True
         return False
 
     def _add_multiple_health_trackers(character_id, health_types):
         """Add multiple health trackers to a character."""
-        char_doc = characters_collection.find_one({"_id": ObjectId(character_id)})
+        char_doc = CharacterRepository.find_one({"_id": ObjectId(character_id)})
         if char_doc:
             health_list = char_doc.get("health", [])
             for health_type in health_types:
                 health_obj = Health(health_type=health_type)
                 health_list.append(health_obj.__dict__)
-            characters_collection.update_one({"_id": ObjectId(character_id)}, {"$set": {"health": health_list}})
+            CharacterRepository.update_one({"_id": ObjectId(character_id)}, {"$set": {"health": health_list}})
             return True
         return False
 
@@ -78,18 +80,25 @@ def register_add_commands(cog):
             return
 
         # Add counters
-        add_predefined_counter(
+        success, error = add_predefined_counter(
             character_id,
             PredefinedCounterEnum.willpower.value,
             willpower,
             ""
         )
-        add_predefined_counter(
+        if not success:
+            await interaction.response.send_message(f"Failed to add willpower counter: {error}", ephemeral=True)
+            return
+
+        success, error = add_predefined_counter(
             character_id,
             PredefinedCounterEnum.mana.value,
             mana,
             ""
         )
+        if not success:
+            await interaction.response.send_message(f"Failed to add mana counter: {error}", ephemeral=True)
+            return
 
         # Add health tracker
         _add_health_tracker(character_id, HealthTypeEnum.normal.value)
@@ -118,18 +127,25 @@ def register_add_commands(cog):
             return
 
         # Add counters
-        add_predefined_counter(
+        success, error = add_predefined_counter(
             character_id,
             PredefinedCounterEnum.blood_pool.value,
             blood_pool,
             ""
         )
-        add_predefined_counter(
+        if not success:
+            await interaction.response.send_message(f"Failed to add blood_pool counter: {error}", ephemeral=True)
+            return
+
+        success, error = add_predefined_counter(
             character_id,
             PredefinedCounterEnum.willpower.value,
             willpower,
             ""
         )
+        if not success:
+            await interaction.response.send_message(f"Failed to add willpower counter: {error}", ephemeral=True)
+            return
 
         # Add health tracker
         _add_health_tracker(character_id, HealthTypeEnum.normal.value)
@@ -163,30 +179,16 @@ def register_add_commands(cog):
             return
 
         # Add counters
-        add_predefined_counter(
-            character_id,
-            PredefinedCounterEnum.willpower_fae.value,
-            willpower_fae,
-            ""
-        )
-        add_predefined_counter(
-            character_id,
-            PredefinedCounterEnum.glamour.value,
-            glamour,
-            ""
-        )
-        add_predefined_counter(
-            character_id,
-            PredefinedCounterEnum.nightmare.value,
-            nightmare,
-            ""
-        )
-        add_predefined_counter(
-            character_id,
-            PredefinedCounterEnum.banality.value,
-            banality,
-            ""
-        )
+        for enum_val, val, label in [
+            (PredefinedCounterEnum.willpower_fae.value, willpower_fae, "willpower_fae"),
+            (PredefinedCounterEnum.glamour.value, glamour, "glamour"),
+            (PredefinedCounterEnum.nightmare.value, nightmare, "nightmare"),
+            (PredefinedCounterEnum.banality.value, banality, "banality"),
+        ]:
+            success, error = add_predefined_counter(character_id, enum_val, val, "")
+            if not success:
+                await interaction.response.send_message(f"Failed to add {label} counter: {error}", ephemeral=True)
+                return
 
         # Add health trackers
         _add_multiple_health_trackers(
@@ -231,47 +233,26 @@ def register_add_commands(cog):
             return
 
         # Add base counters
-        add_predefined_counter(
-            character_id,
-            PredefinedCounterEnum.willpower.value,
-            willpower,
-            ""
-        )
-        add_predefined_counter(
-            character_id,
-            PredefinedCounterEnum.gnosis.value,
-            gnosis,
-            ""
-        )
-        add_predefined_counter(
-            character_id,
-            PredefinedCounterEnum.rage.value,
-            rage,
-            ""
-        )
+        for enum_val, val, label in [
+            (PredefinedCounterEnum.willpower.value, willpower, "willpower"),
+            (PredefinedCounterEnum.gnosis.value, gnosis, "gnosis"),
+            (PredefinedCounterEnum.rage.value, rage, "rage"),
+        ]:
+            success, error = add_predefined_counter(character_id, enum_val, val, "")
+            if not success:
+                await interaction.response.send_message(f"Failed to add {label} counter: {error}", ephemeral=True)
+                return
 
         # Add renown counters with possible replacements
-        add_predefined_counter(
-            character_id,
-            PredefinedCounterEnum.glory.value,
-            glory,
-            "",
-            _get_replacement_value(glory_replacement)
-        )
-        add_predefined_counter(
-            character_id,
-            PredefinedCounterEnum.honor.value,
-            honor,
-            "",
-            _get_replacement_value(honor_replacement)
-        )
-        add_predefined_counter(
-            character_id,
-            PredefinedCounterEnum.wisdom.value,
-            wisdom,
-            "",
-            _get_replacement_value(wisdom_replacement)
-        )
+        for enum_val, val, label, override in [
+            (PredefinedCounterEnum.glory.value, glory, "glory", glory_replacement),
+            (PredefinedCounterEnum.honor.value, honor, "honor", honor_replacement),
+            (PredefinedCounterEnum.wisdom.value, wisdom, "wisdom", wisdom_replacement),
+        ]:
+            success, error = add_predefined_counter(character_id, enum_val, val, "", _get_replacement_value(override))
+            if not success:
+                await interaction.response.send_message(f"Failed to add {label} counter: {error}", ephemeral=True)
+                return
 
         # Add health tracker
         _add_health_tracker(character_id, HealthTypeEnum.normal.value)
@@ -414,7 +395,7 @@ def register_add_commands(cog):
         """Add a health tracker to the health list and update the database."""
         health_obj = Health(health_type=health_type)
         health_list.append(health_obj.__dict__)
-        characters_collection.update_one(
+        CharacterRepository.update_one(
             {"_id": ObjectId(character_id)},
             {"$set": {"health": health_list}}
         )

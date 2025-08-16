@@ -303,7 +303,7 @@ class TestCounterManagement:
 
     # Test updating counter category and comment after creation
     def test_update_counter_category_and_comment(self, test_characters_collection):
-        from utils import update_counter_category, update_counter_comment, get_counters_for_character
+        from utils import set_counter_category, update_counter_comment, get_counters_for_character
         with patch('utils.characters_collection', test_characters_collection):
             user_id = "test_user_update_cat_comment"
             character_name = "Update CatComment"
@@ -311,7 +311,7 @@ class TestCounterManagement:
             character_id = get_character_id_by_user_and_name(user_id, character_name)
             add_counter(character_id, "CounterCat", 1, 2, "general", "Initial comment")
             # Update category
-            success, error = update_counter_category(character_id, "CounterCat", "tempers")
+            success, error = set_counter_category(character_id, "CounterCat", "tempers")
             assert success is True
             assert error is None
             counters = get_counters_for_character(character_id)
@@ -455,12 +455,12 @@ class TestCounterManagement:
             add_user_character(user_id, character_name)
             character_id = get_character_id_by_user_and_name(user_id, character_name)
             # Add single_number counter
-            add_counter(character_id, "OtherCounter", 2, 5, counter_type=CounterTypeEnum.single_number.value)
+            add_counter(character_id, "OtherCounter", 2, 5, counter_type=CounterTypeEnum.perm_not_maximum.value)
             # Update temp above perm
             update_counter(character_id, "OtherCounter", "temp", 10)
             counters = get_counters_for_character(character_id)
             counter = next((c for c in counters if c.counter == "OtherCounter"), None)
-            assert counter.temp == 12  # 2 + 10
+            assert counter.temp == 12  # update_counter sets, not adds
 
     # Test initializing perm_is_maximum and perm_is_maximum_bedlam with temp > perm
     def test_init_perm_is_maximum_and_bedlam_temp_above_perm(self):

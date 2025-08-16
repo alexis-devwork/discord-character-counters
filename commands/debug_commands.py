@@ -1,7 +1,9 @@
 import discord
 from utils import characters_collection
 from health import Health
+from avct_cog import register_command
 
+@register_command("configav_group")
 def register_debug_commands(cog):
     # Move to configav group
     @cog.configav_group.command(
