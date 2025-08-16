@@ -1,5 +1,4 @@
 import discord
-from discord import app_commands
 from utils import (
     sanitize_string,
     get_character_id_by_user_and_name,

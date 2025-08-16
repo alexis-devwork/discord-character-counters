@@ -20,6 +20,47 @@ from .autocomplete import (
 )
 
 def register_add_commands(cog):
+    # --- Helper functions ---
+    async def _handle_character_creation_failure(interaction, error):
+        """Handle failure when creating a character."""
+        await interaction.response.send_message(error, ephemeral=True)
+        return False
+
+    def _add_health_tracker(character_id, health_type):
+        """Add a health tracker of the specified type to a character."""
+        char_doc = characters_collection.find_one({"_id": ObjectId(character_id)})
+        if char_doc:
+            health_obj = Health(health_type=health_type)
+            health_list = char_doc.get("health", [])
+            health_list.append(health_obj.__dict__)
+            characters_collection.update_one({"_id": ObjectId(character_id)}, {"$set": {"health": health_list}})
+            return True
+        return False
+
+    def _add_multiple_health_trackers(character_id, health_types):
+        """Add multiple health trackers to a character."""
+        char_doc = characters_collection.find_one({"_id": ObjectId(character_id)})
+        if char_doc:
+            health_list = char_doc.get("health", [])
+            for health_type in health_types:
+                health_obj = Health(health_type=health_type)
+                health_list.append(health_obj.__dict__)
+            characters_collection.update_one({"_id": ObjectId(character_id)}, {"$set": {"health": health_list}})
+            return True
+        return False
+
+    async def _process_character_creation(interaction, character, user_id):
+        """Process character creation and return character_id if successful."""
+        success, error = add_user_character(user_id, character)
+        if not success:
+            await _handle_character_creation_failure(interaction, error)
+            return None
+        return get_character_id_by_user_and_name(user_id, character)
+
+    def _get_replacement_value(replacement):
+        """Return the replacement value if provided, otherwise None."""
+        return replacement if replacement else None
+
     # --- Add character for sorc ---
     @cog.add_group.command(name="character_sorc", description="Add a Sorcerer character (requires willpower and mana)")
     async def add_character_sorc(
@@ -31,13 +72,12 @@ def register_add_commands(cog):
         character = sanitize_string(character)
         user_id = str(interaction.user.id)
 
-        # Save character
-        success, error = add_user_character(user_id, character)
-        if not success:
-            await interaction.response.send_message(error, ephemeral=True)
+        # Create character
+        character_id = await _process_character_creation(interaction, character, user_id)
+        if not character_id:
             return
 
-        character_id = get_character_id_by_user_and_name(user_id, character)
+        # Add counters
         add_predefined_counter(
             character_id,
             PredefinedCounterEnum.willpower.value,
@@ -50,13 +90,11 @@ def register_add_commands(cog):
             mana,
             ""
         )
-        # Add normal health tracker (MongoDB version)
-        char_doc = characters_collection.find_one({"_id": ObjectId(character_id)})
-        if char_doc:
-            health_obj = Health(health_type=HealthTypeEnum.normal.value)
-            health_list = char_doc.get("health", [])
-            health_list.append(health_obj.__dict__)
-            characters_collection.update_one({"_id": ObjectId(character_id)}, {"$set": {"health": health_list}})
+
+        # Add health tracker
+        _add_health_tracker(character_id, HealthTypeEnum.normal.value)
+
+        # Send confirmation
         splat_msg = f" (splat: sorc, willpower: {willpower}, mana: {mana})"
         await interaction.response.send_message(
             f"Character '{character}'{splat_msg} added for you.",
@@ -74,13 +112,12 @@ def register_add_commands(cog):
         character = sanitize_string(character)
         user_id = str(interaction.user.id)
 
-        # Save character
-        success, error = add_user_character(user_id, character)
-        if not success:
-            await interaction.response.send_message(error, ephemeral=True)
+        # Create character
+        character_id = await _process_character_creation(interaction, character, user_id)
+        if not character_id:
             return
 
-        character_id = get_character_id_by_user_and_name(user_id, character)
+        # Add counters
         add_predefined_counter(
             character_id,
             PredefinedCounterEnum.blood_pool.value,
@@ -93,13 +130,11 @@ def register_add_commands(cog):
             willpower,
             ""
         )
-        # Add normal health tracker (MongoDB version)
-        char_doc = characters_collection.find_one({"_id": ObjectId(character_id)})
-        if char_doc:
-            health_obj = Health(health_type=HealthTypeEnum.normal.value)
-            health_list = char_doc.get("health", [])
-            health_list.append(health_obj.__dict__)
-            characters_collection.update_one({"_id": ObjectId(character_id)}, {"$set": {"health": health_list}})
+
+        # Add health tracker
+        _add_health_tracker(character_id, HealthTypeEnum.normal.value)
+
+        # Send confirmation
         splat_msg = f" (splat: vampire, blood_pool: {blood_pool}, willpower: {willpower})"
         await interaction.response.send_message(
             f"Character '{character}'{splat_msg} added for you.",
@@ -121,12 +156,13 @@ def register_add_commands(cog):
     ):
         character = sanitize_string(character)
         user_id = str(interaction.user.id)
-        success, error = add_user_character(user_id, character)
-        if not success:
-            await interaction.response.send_message(error, ephemeral=True)
+
+        # Create character
+        character_id = await _process_character_creation(interaction, character, user_id)
+        if not character_id:
             return
 
-        character_id = get_character_id_by_user_and_name(user_id, character)
+        # Add counters
         add_predefined_counter(
             character_id,
             PredefinedCounterEnum.willpower_fae.value,
@@ -151,15 +187,14 @@ def register_add_commands(cog):
             banality,
             ""
         )
-        # Add normal and chimerical health trackers (MongoDB version)
-        char_doc = characters_collection.find_one({"_id": ObjectId(character_id)})
-        if char_doc:
-            health_list = char_doc.get("health", [])
-            health_normal = Health(health_type=HealthTypeEnum.normal.value)
-            health_chimerical = Health(health_type=HealthTypeEnum.chimerical.value)
-            health_list.append(health_normal.__dict__)
-            health_list.append(health_chimerical.__dict__)
-            characters_collection.update_one({"_id": ObjectId(character_id)}, {"$set": {"health": health_list}})
+
+        # Add health trackers
+        _add_multiple_health_trackers(
+            character_id,
+            [HealthTypeEnum.normal.value, HealthTypeEnum.chimerical.value]
+        )
+
+        # Send confirmation
         splat_msg = (
             f" (splat: changeling, willpower_fae: {willpower_fae}, glamour: {glamour}, "
             f"nightmare: {nightmare}, banality: {banality})"
@@ -189,12 +224,13 @@ def register_add_commands(cog):
     ):
         character = sanitize_string(character)
         user_id = str(interaction.user.id)
-        success, error = add_user_character(user_id, character)
-        if not success:
-            await interaction.response.send_message(error, ephemeral=True)
+
+        # Create character
+        character_id = await _process_character_creation(interaction, character, user_id)
+        if not character_id:
             return
 
-        character_id = get_character_id_by_user_and_name(user_id, character)
+        # Add base counters
         add_predefined_counter(
             character_id,
             PredefinedCounterEnum.willpower.value,
@@ -213,45 +249,58 @@ def register_add_commands(cog):
             rage,
             ""
         )
+
+        # Add renown counters with possible replacements
         add_predefined_counter(
             character_id,
             PredefinedCounterEnum.glory.value,
             glory,
             "",
-            glory_replacement if glory_replacement else None
+            _get_replacement_value(glory_replacement)
         )
         add_predefined_counter(
             character_id,
             PredefinedCounterEnum.honor.value,
             honor,
             "",
-            honor_replacement if honor_replacement else None
+            _get_replacement_value(honor_replacement)
         )
         add_predefined_counter(
             character_id,
             PredefinedCounterEnum.wisdom.value,
             wisdom,
             "",
-            wisdom_replacement if wisdom_replacement else None
+            _get_replacement_value(wisdom_replacement)
         )
-        # Add normal health tracker (MongoDB version)
-        char_doc = characters_collection.find_one({"_id": ObjectId(character_id)})
-        if char_doc:
-            health_obj = Health(health_type=HealthTypeEnum.normal.value)
-            health_list = char_doc.get("health", [])
-            health_list.append(health_obj.__dict__)
-            characters_collection.update_one({"_id": ObjectId(character_id)}, {"$set": {"health": health_list}})
+
+        # Add health tracker
+        _add_health_tracker(character_id, HealthTypeEnum.normal.value)
+
+        # Generate replacement strings for display
+        replacements = _generate_replacement_strings(
+            glory_replacement, honor_replacement, wisdom_replacement
+        )
+
+        # Send confirmation
         splat_msg = (
             f" (splat: fera, willpower: {willpower}, gnosis: {gnosis}, rage: {rage}, "
-            f"glory: {glory}, honor: {honor}, wisdom: {wisdom}"
-            f"{', glory_replacement: ' + glory_replacement if glory_replacement else ''}"
-            f"{', honor_replacement: ' + honor_replacement if honor_replacement else ''}"
-            f"{', wisdom_replacement: ' + wisdom_replacement if wisdom_replacement else ''})"
+            f"glory: {glory}, honor: {honor}, wisdom: {wisdom}{replacements})"
         )
         await interaction.response.send_message(
             f"Character '{character}'{splat_msg} added for you.",
             ephemeral=True
         )
+
+    def _generate_replacement_strings(glory_replacement, honor_replacement, wisdom_replacement):
+        """Generate replacement strings for the confirmation message."""
+        replacements = ""
+        if glory_replacement:
+            replacements += f", glory_replacement: {glory_replacement}"
+        if honor_replacement:
+            replacements += f", honor_replacement: {honor_replacement}"
+        if wisdom_replacement:
+            replacements += f", wisdom_replacement: {wisdom_replacement}"
+        return replacements
 
     @cog.add_group.command(name="counter", description="Add a predefined counter to a character")
     @app_commands.autocomplete(character=character_name_autocomplete, counter_type=predefined_counter_type_autocomplete)
@@ -270,36 +319,46 @@ def register_add_commands(cog):
             await interaction.response.send_message("Character not found for this user.", ephemeral=True)
             return
 
+        # Validate counter type
         try:
             counter_enum = PredefinedCounterEnum(counter_type)
         except ValueError:
             await interaction.response.send_message("Invalid counter type selected.", ephemeral=True)
             return
 
-        # Require name_override for project_roll and item_with_charges
-        if counter_enum in (PredefinedCounterEnum.project_roll, PredefinedCounterEnum.item_with_charges):
-            if not name_override:
-                await interaction.response.send_message("You must specify a counter name for this type.", ephemeral=True)
-                return
-            override_name = name_override
-        else:
-            # Use name_override for glory, honor, wisdom if provided
-            override_name = None
-            if counter_enum in (
-                PredefinedCounterEnum.glory,
-                PredefinedCounterEnum.honor,
-                PredefinedCounterEnum.wisdom
-            ) and name_override:
-                override_name = name_override
+        # Determine override name
+        override_name = _determine_override_name(counter_enum, name_override)
+        if override_name == "REQUIRED_BUT_MISSING":
+            await interaction.response.send_message("You must specify a counter name for this type.", ephemeral=True)
+            return
 
-        perm_value = value
+        # Add the counter
+        success, error = add_predefined_counter(character_id, counter_enum.value, value, comment, override_name)
 
-        success, error = add_predefined_counter(character_id, counter_enum.value, perm_value, comment, override_name)
+        # Handle result
         if success:
             await interaction.response.send_message(
                 f"{counter_type.title()} counter added to character '{character}'.", ephemeral=True)
         else:
             await interaction.response.send_message(error or "Failed to add counter.", ephemeral=True)
+
+    def _determine_override_name(counter_enum, name_override):
+        """Determine the override name for a counter based on its type."""
+        # Require name_override for project_roll and item_with_charges
+        if counter_enum in (PredefinedCounterEnum.project_roll, PredefinedCounterEnum.item_with_charges):
+            if not name_override:
+                return "REQUIRED_BUT_MISSING"
+            return name_override
+
+        # Use name_override for glory, honor, wisdom if provided
+        if counter_enum in (
+            PredefinedCounterEnum.glory,
+            PredefinedCounterEnum.honor,
+            PredefinedCounterEnum.wisdom
+        ) and name_override:
+            return name_override
+
+        return None
 
     # --- Add health command ---
     @cog.add_group.command(name="health", description="Add a health tracker to a character")
@@ -316,29 +375,48 @@ def register_add_commands(cog):
             await interaction.response.send_message("Character not found for this user.", ephemeral=True)
             return
 
+        # Validate health type
         try:
             ht_enum = HealthTypeEnum(health_type)
         except ValueError:
             await interaction.response.send_message("Invalid health type.", ephemeral=True)
             return
 
-        # Convert character_id to ObjectId for MongoDB lookup
+        # Get character document
         char_doc = characters_collection.find_one({"_id": ObjectId(character_id)})
         if not char_doc:
             await interaction.response.send_message("Character not found.", ephemeral=True)
             return
 
+        # Check if health tracker already exists
         health_list = char_doc.get("health", [])
-        if any(h.get("health_type") == ht_enum.value for h in health_list):
-            await interaction.response.send_message(f"A {health_type} health tracker already exists for this character.", ephemeral=True)
+        if _health_tracker_exists(health_list, ht_enum.value):
+            await interaction.response.send_message(
+                f"A {health_type} health tracker already exists for this character.",
+                ephemeral=True
+            )
             return
 
-        health_obj = Health(health_type=ht_enum.value)
-        health_list.append(health_obj.__dict__)
-        characters_collection.update_one({"_id": ObjectId(character_id)}, {"$set": {"health": health_list}})
+        # Add health tracker
+        _add_health_tracker_to_list(health_list, ht_enum.value, character_id)
 
+        # Send confirmation
         await interaction.response.send_message(
-            f"Health tracker ({health_type}) added to character '{character}'.", ephemeral=True
+            f"Health tracker ({health_type}) added to character '{character}'.",
+            ephemeral=True
+        )
+
+    def _health_tracker_exists(health_list, health_type):
+        """Check if a health tracker of the given type already exists."""
+        return any(h.get("health_type") == health_type for h in health_list)
+
+    def _add_health_tracker_to_list(health_list, health_type, character_id):
+        """Add a health tracker to the health list and update the database."""
+        health_obj = Health(health_type=health_type)
+        health_list.append(health_obj.__dict__)
+        characters_collection.update_one(
+            {"_id": ObjectId(character_id)},
+            {"$set": {"health": health_list}}
         )
 
     # --- Add custom counter ---
@@ -360,15 +438,18 @@ def register_add_commands(cog):
             await interaction.response.send_message("Character not found for this user.", ephemeral=True)
             return
 
+        # Sanitize inputs
         counter = sanitize_string(counter)
         category = sanitize_string(category)
         if comment:
             comment = sanitize_string(comment)
 
+        # Add the counter
         success, error = add_counter(character_id, counter, temp, perm, category, comment)
+
+        # Handle result
         if success:
             await interaction.response.send_message(
                 f"Counter '{counter}' added to character '{character}'.", ephemeral=True)
         else:
             await interaction.response.send_message(error or "Failed to add counter.", ephemeral=True)
-
