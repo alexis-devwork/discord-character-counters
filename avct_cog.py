@@ -75,3 +75,6 @@ async def setup(bot):
 # - To add a new command, create a function in a module under 'commands' and decorate it with @register_command("group_name").
 # - The function should take the cog as an argument and register commands to the specified group.
 # - Supported group names: avct_group, add_group, rename_group, remove_group, edit_group, character_group.
+
+# No changes needed if you follow the existing registration pattern.
+# The new command will be registered via @register_command("configav_group") in health_commands.py.

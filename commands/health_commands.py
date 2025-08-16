@@ -10,7 +10,8 @@ from utils import (
     handle_invalid_health_type,
     handle_invalid_damage_type,
     handle_health_tracker_not_found,
-    update_health_in_db  # Add import
+    update_health_in_db,  # Add import
+    add_health_level  # Add import
 )
 from utils import characters_collection, CharacterRepository
 from health import Health, HealthTypeEnum, DamageEnum
@@ -170,3 +171,39 @@ def register_health_commands(cog):
 
         action_msg = f"Healed {levels} levels of damage from {_health_type_display(chimerical)} health."
         await _send_health_response(interaction, character, msg, action_msg)
+
+@register_command("configav_group")
+def register_configav_health_commands(cog):
+    @cog.configav_group.command(
+        name="add_health_level",
+        description="Add an extra health level to a character's health tracker"
+    )
+    @discord.app_commands.autocomplete(character=character_name_autocomplete)
+    async def add_health_level_cmd(
+        interaction: discord.Interaction,
+        character: str,
+        health_type: str,
+        health_level_name: str
+    ):
+        user_id = str(interaction.user.id)
+        character_id = get_character_id_by_user_and_name(user_id, character)
+        if character_id is None:
+            await handle_character_not_found(interaction)
+            return
+
+        # Validate health_type
+        valid_types = [e.value for e in HealthTypeEnum]
+        if health_type not in valid_types:
+            await handle_invalid_health_type(interaction)
+            return
+
+        # Add health level
+        success, error = add_health_level(character_id, health_type, health_level_name)
+        if not success:
+            await interaction.response.send_message(f"Failed to add health level: {error}", ephemeral=True)
+            return
+
+        await interaction.response.send_message(
+            f"Added health level '{health_level_name}' to {health_type} health tracker for character '{character}'.",
+            ephemeral=True
+        )
