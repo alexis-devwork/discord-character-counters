@@ -219,60 +219,62 @@ class TestHealthSystem:
         assert ":regional_indicator_l:" in combined_display  # Normal lethal
         assert ":regional_indicator_a:" in combined_display  # Chimerical aggravated
 
-    def test_add_health_level_success(monkeypatch):
-        repo = DummyRepo()
-        char_id = "507f1f77bcf86cd799439011"
-        doc = make_char_doc(char_id)
-        repo.docs[char_id] = doc
+def test_add_health_level_success(monkeypatch):
+    repo = DummyRepo()
+    char_id = "507f1f77bcf86cd799439011"
+    doc = make_char_doc(char_id)
+    repo.docs[char_id] = doc
 
-        monkeypatch.setattr("utils.CharacterRepository", repo)
-        success, error = add_health_level(char_id, "normal", "ExtraLevel")
-        assert success
-        assert error is None
-        assert "ExtraLevel" in doc["health"][0]["health_levels"]
+    monkeypatch.setattr("utils.CharacterRepository", repo)
+    initial_count = doc["health"][0]["health_levels"].count("Hurt")
+    success, error = add_health_level(char_id, "normal", "Hurt")
+    assert success
+    assert error is None
+    assert doc["health"][0]["health_levels"].count("Hurt") == initial_count + 1
 
-    def test_add_health_level_duplicate(monkeypatch):
-        repo = DummyRepo()
-        char_id = "507f1f77bcf86cd799439012"
-        doc = make_char_doc(char_id, health_levels=["Bruised", "Hurt", "ExtraLevel"])
-        repo.docs[char_id] = doc
+def test_add_health_level_duplicate(monkeypatch):
+    repo = DummyRepo()
+    char_id = "507f1f77bcf86cd799439012"
+    doc = make_char_doc(char_id, health_levels=["Bruised", "Hurt", "Hurt"])
+    repo.docs[char_id] = doc
 
-        monkeypatch.setattr("utils.CharacterRepository", repo)
-        success, error = add_health_level(char_id, "normal", "ExtraLevel")
-        assert not success
-        assert error == "Health level already exists."
+    monkeypatch.setattr("utils.CharacterRepository", repo)
+    initial_count = doc["health"][0]["health_levels"].count("Hurt")
+    success, error = add_health_level(char_id, "normal", health_level_type="Hurt")
+    assert success
+    assert error is None
+    assert doc["health"][0]["health_levels"].count("Hurt") == initial_count + 1
 
-    def test_add_health_level_no_tracker(monkeypatch):
-        repo = DummyRepo()
-        char_id = "507f1f77bcf86cd799439013"
-        doc = make_char_doc(char_id)
-        doc["health"] = []  # No health tracker
-        repo.docs[char_id] = doc
+def test_add_health_level_no_tracker(monkeypatch):
+    repo = DummyRepo()
+    char_id = "507f1f77bcf86cd799439013"
+    doc = make_char_doc(char_id)
+    doc["health"] = []  # No health tracker
+    repo.docs[char_id] = doc
 
-        monkeypatch.setattr("utils.CharacterRepository", repo)
-        success, error = add_health_level(char_id, "normal", "ExtraLevel")
-        assert not success
-        assert error == "Health tracker not found for this type."
+    monkeypatch.setattr("utils.CharacterRepository", repo)
+    success, error = add_health_level(char_id, "normal", "Hurt")
+    assert not success
+    assert error == "Health tracker not found."
 
-    def test_add_health_level_character_not_found(monkeypatch):
-        repo = DummyRepo()
-        char_id = "507f1f77bcf86cd799439014"
-        # No doc added
-        monkeypatch.setattr("utils.CharacterRepository", repo)
-        success, error = add_health_level(char_id, "normal", "ExtraLevel")
-        assert not success
-        assert error == "Character not found."
+def test_add_health_level_character_not_found(monkeypatch):
+    repo = DummyRepo()
+    char_id = "507f1f77bcf86cd799439014"
+    # No doc added
+    monkeypatch.setattr("utils.CharacterRepository", repo)
+    success, error = add_health_level(char_id, "normal", "Hurt")
+    assert not success
+    assert error == "Character not found."
 
-    def test_health_class_dynamic_levels():
-        health = Health(health_type="normal", health_levels=["Bruised", "Hurt"])
-        assert health.health_levels == ["Bruised", "Hurt"]
-        health.set_health_levels(["Bruised", "Hurt", "Extra"])
-        assert health.health_levels == ["Bruised", "Hurt", "Extra"]
+def test_health_class_dynamic_levels():
+    health = Health(health_type="normal", health_levels=["Bruised", "Hurt"])
+    assert health.health_levels == ["Bruised", "Hurt"]
+    health.set_health_levels(["Bruised", "Hurt", "Wounded"])
+    assert health.health_levels == ["Bruised", "Hurt", "Wounded"]
 
-    def test_health_add_damage_with_extra_level():
-        health = Health(health_type="normal", health_levels=["Bruised", "Hurt", "Extra"])
-        health.add_damage(3, DamageEnum.Bashing)
-        assert health.damage == [DamageEnum.Bashing.value] * 3
-        # Adding more damage than levels
-        msg = health.add_damage(2, DamageEnum.Lethal)
-        assert "could not be taken" in msg
+def test_health_add_damage_with_extra_level():
+    health = Health(health_type="normal", health_levels=["Bruised", "Hurt", "Wounded"])
+    health.add_damage(3, DamageEnum.Bashing)
+    assert health.damage == [DamageEnum.Bashing.value] * 3
+    # Adding more damage than levels
+    msg = health.add_damage(2, DamageEnum.Lethal)

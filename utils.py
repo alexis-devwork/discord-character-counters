@@ -79,6 +79,18 @@ def sanitize_string(s: str) -> str:
     s = html.escape(s)
     return s
 
+def sanitize_for_lookup(character: str) -> str:
+    """
+    Sanitize and escape a character name for lookup (used for autocomplete input).
+    This ensures that if the user selects an unescaped name from autocomplete,
+    it is properly escaped for DB lookup, avoiding double escaping.
+    """
+    if character is None:
+        return None
+    character = character.strip()
+    character = html.escape(character)
+    return character
+
 class CharacterRepository:
     @staticmethod
     def find_one(query):
@@ -108,11 +120,14 @@ def add_user_character(user_id: str, character: str):
     # Prevent empty or whitespace-only character names
     if character is None or character.strip() == "":
         return False, "Character name cannot be empty or whitespace only."
+    # Disallow any non-alphanumeric characters except spaces
+    if not re.fullmatch(r"[A-Za-z0-9 ]+", character.strip()):
+        return False, "Character name must only contain alphanumeric characters and spaces."
     # Check raw length before sanitization
     if len(character.strip()) > MAX_FIELD_LENGTH:
         return False, f"Character name must be at most {MAX_FIELD_LENGTH} characters."
     try:
-        character = sanitize_and_validate("character", character, MAX_FIELD_LENGTH)
+        character = sanitize_and_validate("character", character.strip(), MAX_FIELD_LENGTH)
     except ValueError as ve:
         return False, str(ve)
 
@@ -134,66 +149,44 @@ def _character_exists(user_id: str, character: str) -> bool:
     character = sanitize_string(character)
     return CharacterRepository.find_one({"user": user_id, "character": character}) is not None
 
+def _find_character_doc_by_user_and_name(user_id: str, character: str):
+    """
+    Find a character document for a user by character name, matching both escaped and unescaped forms.
+    """
+    if character is None:
+        return None
+    character_raw = character.strip()
+    character_escaped = html.escape(character_raw)
+    doc = CharacterRepository.find_one({"user": user_id, "character": character_escaped})
+    if not doc:
+        doc = CharacterRepository.find_one({"user": user_id, "character": character_raw})
+    return doc
+
 def get_character_id_by_user_and_name(user_id: str, character: str):
     """
     Return the character ID for a given user and character name.
     Returns None if not found.
     """
-    character = sanitize_string(character)
-    char_doc = CharacterRepository.find_one({"user": user_id, "character": character})
-    if char_doc:
-        return str(char_doc["_id"])
+    doc = _find_character_doc_by_user_and_name(user_id, character)
+    if doc:
+        return str(doc["_id"])
     return None
 
-def rename_character(user_id: str, old_name: str, new_name: str):
+def get_counters_for_character(character_id: str):
     """
-    Rename a character for a user.
+    Return a list of Counter objects for the given character ID.
     """
-    old_name_sanitized = sanitize_string(old_name)
-    new_name_sanitized = sanitize_string(new_name)
-
-    # Validate new name
-    if new_name is None or new_name.strip() == "":
-        return False, "Character name cannot be empty or whitespace only."
-    # Check raw length before sanitization
-    if len(new_name.strip()) > MAX_FIELD_LENGTH:
-        return False, f"Character name must be at most {MAX_FIELD_LENGTH} characters."
-    if len(new_name_sanitized) > MAX_FIELD_LENGTH:
-        return False, f"Character name must be at most {MAX_FIELD_LENGTH} characters."
-
-    # Check uniqueness for sanitized new name
-    if _character_exists(user_id, new_name_sanitized):
-        return False, "A character with that name already exists for you."
-
-    char_doc = CharacterRepository.find_one({"user": user_id, "character": old_name_sanitized})
-    if not char_doc:
-        return False, "Character to rename not found."
-    CharacterRepository.update_one({"_id": char_doc["_id"]}, {"$set": {"character": new_name_sanitized}})
-    return True, None
-
-def _user_at_character_limit(user_id: str) -> bool:
-    """Check if the user has reached the maximum character limit."""
-    count = CharacterRepository.count_documents({"user": user_id})
-    return count >= MAX_USER_CHARACTERS
-
-def _create_character_entry(user_id: str, character: str) -> dict:
-    """Create a new character entry dictionary."""
-    return {
-        "user": user_id,
-        "character": character,
-        "counters": [],
-        "health": [],
-    }
-
-def get_all_user_characters_for_user(user_id: str):
-    chars = CharacterRepository.find({"user": user_id})
-    # Use UserCharacter.from_dict for construction
-    return [UserCharacter.from_dict(c) for c in chars]
+    char_doc = _get_character_by_id(character_id)
+    counters = char_doc.get("counters", []) if char_doc else []
+    return [CounterFactory.from_dict(c) for c in counters]
 
 def add_counter(character_id: str, counter_name: str, temp: int, perm: int, category: str = CategoryEnum.general.value, comment: str = None, counter_type: str = CounterTypeEnum.single_number.value):
     # Prevent empty or whitespace-only counter names
     if counter_name is None or counter_name.strip() == "":
         return False, "Counter name cannot be empty or whitespace only."
+    # Disallow any non-alphanumeric characters except spaces
+    if not re.fullmatch(r"[A-Za-z0-9 ]+", counter_name.strip()):
+        return False, "Counter name must only contain alphanumeric characters and spaces."
     # Prevent negative values
     if temp is not None and temp < 0:
         return False, "Temp value cannot be below zero."
@@ -206,7 +199,7 @@ def add_counter(character_id: str, counter_name: str, temp: int, perm: int, cate
     # Validate inputs
     try:
         sanitized = sanitize_and_validate_fields({
-            "counter": (counter_name, MAX_FIELD_LENGTH),
+            "counter": (counter_name.strip(), MAX_FIELD_LENGTH),
             "category": (category, MAX_FIELD_LENGTH),
             "comment": (comment, MAX_COMMENT_LENGTH) if comment is not None else ("", MAX_COMMENT_LENGTH)
         })
@@ -214,10 +207,25 @@ def add_counter(character_id: str, counter_name: str, temp: int, perm: int, cate
     except ValueError as ve:
         return False, str(ve)
 
-    # Get character document
-    char_doc = _get_character_by_id(character_id)
+    # --- Robust character lookup: match by both escaped and unescaped name ---
+    char_doc = None
+    try:
+        # Try ObjectId lookup first
+        char_doc = _get_character_by_id(character_id)
+    except Exception:
+        pass
     if not char_doc:
-        return False, "Character not found."
+        # Try matching by name (escaped/unescaped)
+        # If character_id is not an ObjectId, treat as character name and try both forms
+        # (This covers cases where character_id is actually the character name)
+        # Try both escaped and raw for lookup
+        character_raw = character_id.strip()
+        character_escaped = html.escape(character_raw)
+        char_doc = CharacterRepository.find_one({"character": character_escaped})
+        if not char_doc:
+            char_doc = CharacterRepository.find_one({"character": character_raw})
+        if not char_doc:
+            return False, "Character not found."
 
     counters = char_doc.get("counters", [])
 
@@ -237,7 +245,7 @@ def add_counter(character_id: str, counter_name: str, temp: int, perm: int, cate
     # Create and add the counter
     new_counter = Counter(counter_name, temp, perm, category, comment, counter_type=counter_type).__dict__
     counters.append(new_counter)
-    CharacterRepository.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": counters}})
+    CharacterRepository.update_one({"_id": char_doc["_id"]}, {"$set": {"counters": counters}})
     return True, None
 
 def _get_character_by_id(character_id: str):
@@ -283,9 +291,6 @@ def update_counter(character_id, counter_name, field, value):
             return False, "Perm value cannot be below zero."
         setattr(target, field, new_value)
         # For perm_is_maximum types, adjust temp if perm is lowered below temp
-        if target.counter_type in [CounterTypeEnum.perm_is_maximum.value, CounterTypeEnum.perm_is_maximum_bedlam.value]:
-            if target.temp > new_value:
-                target.temp = new_value
 
     update_counter_in_db(character_id, counter_name, field, getattr(target, field), target)
     return True, None
@@ -293,12 +298,16 @@ def update_counter(character_id, counter_name, field, value):
 def update_counter_in_db(character_id: str, counter_name: str, field: str, value, target=None):
     """
     Update a counter field in MongoDB. Optionally adjust temp if perm is lowered below temp.
+    Matches counter_name both escaped and unescaped.
     """
     char_doc = _get_character_by_id(character_id)
     counters_list = char_doc.get("counters", [])
 
+    counter_name_raw = counter_name.strip()
+    counter_name_escaped = html.escape(counter_name_raw)
+
     for c in counters_list:
-        if c["counter"] == counter_name:
+        if c["counter"] == counter_name_raw or c["counter"] == counter_name_escaped:
             c[field] = value
             # If updating perm, adjust temp for max types
             if field == "perm" and target and target.counter_type in [CounterTypeEnum.perm_is_maximum.value, CounterTypeEnum.perm_is_maximum_bedlam.value]:
@@ -319,40 +328,6 @@ def update_health_in_db(character_id: str, health_type: str, damage):
             h["damage"] = damage
     CharacterRepository.update_one({"_id": ObjectId(character_id)}, {"$set": {"health": health_list}})
     return health_list
-
-def get_counters_for_character(character_id: str):
-    """
-    Return a list of Counter objects for the given character ID.
-    """
-    char_doc = _get_character_by_id(character_id)
-    counters = char_doc.get("counters", []) if char_doc else []
-    return [CounterFactory.from_dict(c) for c in counters]
-
-def set_counter_category(character_id: str, counter_name: str, category: str):
-    """
-    Set the category for a counter.
-    """
-    char_doc = _get_character_by_id(character_id)
-    counters = char_doc.get("counters", []) if char_doc else []
-    for c in counters:
-        if c["counter"] == counter_name:
-            c["category"] = category
-            CharacterRepository.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": counters}})
-            return True, None
-    return False, "Counter not found."
-
-def set_counter_comment(character_id: str, counter_name: str, comment: str):
-    """
-    Set the comment for a counter.
-    """
-    char_doc = _get_character_by_id(character_id)
-    counters = char_doc.get("counters", []) if char_doc else []
-    for c in counters:
-        if c["counter"] == counter_name:
-            c["comment"] = comment
-            CharacterRepository.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": counters}})
-            return True, None
-    return False, "Counter not found."
 
 def display_character_counters(character_id: str, unescape_func=None):
     """
@@ -405,18 +380,60 @@ def fully_unescape(s):
     """
     return html.unescape(s)
 
+def rename_character(user_id: str, old_name: str, new_name: str):
+    """
+    Rename a character for a user.
+    Matches both escaped and unescaped forms for old_name.
+    Disallows non-alphanumeric characters except spaces in new_name.
+    """
+    if old_name is None or new_name is None:
+        return False, "Character name cannot be empty or whitespace only."
+    # Disallow any non-alphanumeric characters except spaces in new_name
+    if not re.fullmatch(r"[A-Za-z0-9 ]+", new_name.strip()):
+        return False, "Character name must only contain alphanumeric characters and spaces."
+    old_name_raw = old_name.strip()
+    old_name_escaped = html.escape(old_name_raw)
+    new_name_sanitized = sanitize_string(new_name.strip())
+
+    # Validate new name
+    if new_name.strip() == "":
+        return False, "Character name cannot be empty or whitespace only."
+    if len(new_name.strip()) > MAX_FIELD_LENGTH:
+        return False, f"Character name must be at most {MAX_FIELD_LENGTH} characters."
+    if len(new_name_sanitized) > MAX_FIELD_LENGTH:
+        return False, f"Character name must be at most {MAX_FIELD_LENGTH} characters."
+
+    # Check uniqueness for sanitized new name
+    if _character_exists(user_id, new_name_sanitized):
+        return False, "A character with that name already exists for you."
+
+    # Try both escaped and raw for lookup
+    char_doc = CharacterRepository.find_one({"user": user_id, "character": old_name_escaped})
+    if not char_doc:
+        char_doc = CharacterRepository.find_one({"user": user_id, "character": old_name_raw})
+    if not char_doc:
+        return False, "Character to rename not found."
+    CharacterRepository.update_one({"_id": char_doc["_id"]}, {"$set": {"character": new_name_sanitized}})
+    return True, None
+
 def rename_counter(character_id: str, old_name: str, new_name: str):
     """
     Rename a counter for a character.
     Prevents renaming to a name that already exists (case-insensitive, sanitized).
+    Disallows non-alphanumeric characters except spaces in new_name.
     """
+    # Disallow any non-alphanumeric characters except spaces in new_name
+    if new_name is None or new_name.strip() == "":
+        return False, "Counter name cannot be empty or whitespace only."
+    if not re.fullmatch(r"[A-Za-z0-9 ]+", new_name.strip()):
+        return False, "Counter name must only contain alphanumeric characters and spaces."
     char_doc = _get_character_by_id(character_id)
     counters = char_doc.get("counters", []) if char_doc else []
-    old_name_sanitized = sanitize_string(old_name)
-    new_name_sanitized = sanitize_string(new_name)
+    old_name_sanitized = sanitize_string(old_name.strip())
+    new_name_sanitized = sanitize_string(new_name.strip())
 
     # Validate new name
-    if new_name is None or new_name.strip() == "":
+    if new_name.strip() == "":
         return False, "Counter name cannot be empty or whitespace only."
     if len(new_name.strip()) > MAX_FIELD_LENGTH:
         return False, f"Counter name must be at most {MAX_FIELD_LENGTH} characters."
@@ -437,6 +454,81 @@ def rename_counter(character_id: str, old_name: str, new_name: str):
             CharacterRepository.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": counters}})
             return True, None
     return False, "Counter to rename not found."
+
+def add_health(character_id: str, level: int, damage: int):
+    """
+    Add a health entry to a character.
+    Returns (success, error).
+    """
+    char_doc = _get_character_by_id(character_id)
+    if not char_doc:
+        return False, "Character not found."
+    health_list = char_doc.get("health", [])
+    # Check for duplicate health level
+    if any(h.get("level") == level for h in health_list):
+        return False, "Health entry already exists."
+    # Check for health limit
+    from health import HEALTH_LEVELS
+    if len(health_list) >= len(HEALTH_LEVELS):
+        return False, "Reached maximum health level."
+    health_list.append({"level": level, "damage": damage})
+    CharacterRepository.update_one({"_id": ObjectId(character_id)}, {"$set": {"health": health_list}})
+    return True, None
+
+def delete_health(character_id: str, level: int):
+    """
+    Delete a health entry from a character.
+    Returns (success, error).
+    """
+    char_doc = _get_character_by_id(character_id)
+    if not char_doc:
+        return False, "Character not found."
+    health_list = char_doc.get("health", [])
+    new_health_list = [h for h in health_list if h.get("level") != level]
+    if len(new_health_list) == len(health_list):
+        return False, "Health entry not found."
+    CharacterRepository.update_one({"_id": ObjectId(character_id)}, {"$set": {"health": new_health_list}})
+    return True, None
+
+def delete_user_character(character_id: str):
+    """
+    Delete a character by its ID.
+    Returns (success, error).
+    """
+    char_doc = _get_character_by_id(character_id)
+    if not char_doc:
+        return False, "Character not found."
+    CharacterRepository.delete_one({"_id": ObjectId(character_id)})
+    return True, None
+
+def get_user_character_by_id(character_id: str):
+    """
+    Get a UserCharacter object by character ID.
+    """
+    char_doc = _get_character_by_id(character_id)
+    if not char_doc:
+        return None
+    return UserCharacter.from_dict(char_doc)
+
+def get_user_character_health(character_id: str):
+    """
+    Get the health list for a character by ID.
+    """
+    char_doc = _get_character_by_id(character_id)
+    if not char_doc:
+        return []
+    return char_doc.get("health", [])
+
+def delete_user_character(character_id: str):
+    """
+    Delete a character by its ID.
+    Returns (success, error).
+    """
+    char_doc = _get_character_by_id(character_id)
+    if not char_doc:
+        return False, "Character not found."
+    CharacterRepository.delete_one({"_id": ObjectId(character_id)})
+    return True, None
 
 def add_health(character_id: str, level: int, damage: int):
     """
@@ -523,17 +615,6 @@ async def handle_health_tracker_not_found(interaction):
     await interaction.response.send_message("Health tracker not found for this character and type.", ephemeral=True)
     return False
 
-def get_character_id_by_user_and_name(user_id: str, character: str):
-    """
-    Return the character ID for a given user and character name.
-    Returns None if not found.
-    """
-    character = sanitize_string(character)
-    char_doc = CharacterRepository.find_one({"user": user_id, "character": character})
-    if char_doc:
-        return str(char_doc["_id"])
-    return None
-
 def add_predefined_counter(character_id: str, counter_type: str, value: int = None, comment: str = None, name_override: str = None):
     """
     Add a predefined counter to a character.
@@ -571,9 +652,10 @@ def add_predefined_counter(character_id: str, counter_type: str, value: int = No
 
     counters = char_doc.get("counters", [])
 
-    # Sanitize counter_name before checking for duplicates
-    sanitized_name = sanitize_string(counter_name)
-    if any(sanitize_string(c["counter"]).lower() == sanitized_name.lower() for c in counters):
+    # --- FIX: Check for duplicate counter name (case-insensitive, sanitized) ---
+    # Always check against the actual name used in the counter object (counter_obj.counter)
+    sanitized_new_name = sanitize_string(counter_obj.counter)
+    if any(sanitize_string(c["counter"]).lower() == sanitized_new_name.lower() for c in counters):
         return False, "A counter with that name exists for this character."
 
     # Check counter limit
@@ -589,13 +671,19 @@ def remove_counter(character_id: str, counter_name: str):
     """
     Remove a counter from a character.
     Returns (success, error, details) where details is a string of remaining counters.
+    Matches counter_name both escaped and unescaped.
     """
     char_doc = _get_character_by_id(character_id)
     if not char_doc:
         return False, "Character not found.", None
 
     counters = char_doc.get("counters", [])
-    new_counters = [c for c in counters if c["counter"] != counter_name]
+    counter_name_raw = counter_name.strip()
+    counter_name_escaped = html.escape(counter_name_raw)
+    new_counters = [
+        c for c in counters
+        if c["counter"] != counter_name_raw and c["counter"] != counter_name_escaped
+    ]
     if len(new_counters) == len(counters):
         return False, "Counter not found.", None
 
@@ -603,13 +691,111 @@ def remove_counter(character_id: str, counter_name: str):
     details = generate_counters_output([CounterFactory.from_dict(c) for c in new_counters])
     return True, None, details
 
+def set_counter_category(character_id: str, counter_name: str, category: str):
+    """
+    Set the category for a counter.
+    Matches counter_name both escaped and unescaped.
+    """
+    char_doc = _get_character_by_id(character_id)
+    counters = char_doc.get("counters", []) if char_doc else []
+    counter_name_raw = counter_name.strip()
+    counter_name_escaped = html.escape(counter_name_raw)
+    for c in counters:
+        if c["counter"] == counter_name_raw or c["counter"] == counter_name_escaped:
+            c["category"] = category
+            CharacterRepository.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": counters}})
+            return True, None
+    return False, "Counter not found."
+
+def update_counter_comment(character_id: str, counter_name: str, comment: str):
+    """
+    Update the comment for a counter in a character.
+    Returns (success, error).
+    Matches counter_name both escaped and unescaped.
+    """
+    char_doc = _get_character_by_id(character_id)
+    if not char_doc:
+        return False, "Character not found."
+    counters = char_doc.get("counters", []) if char_doc else []
+    counter_name_raw = counter_name.strip()
+    counter_name_escaped = html.escape(counter_name_raw)
+    for c in counters:
+        if c["counter"] == counter_name_raw or c["counter"] == counter_name_escaped:
+            c["comment"] = comment
+            CharacterRepository.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": counters}})
+            return True, None
+    return False, "Counter not found."
+
+def add_health_level(character_id: str, health_type: str, health_level_type: str):
+    """
+    Add a health level to a health tracker for a character.
+    Returns (success, error).
+    Allows adding more health levels of a type already in the list.
+    """
+    char_doc = _get_character_by_id(character_id)
+    if not char_doc:
+        return False, "Character not found."
+    health_list = char_doc.get("health", [])
+    for h in health_list:
+        if h.get("health_type") == health_type:
+            levels = h.get("health_levels", [])
+            # Allow duplicates, just append
+            levels.append(health_level_type)
+            h["health_levels"] = levels
+            CharacterRepository.update_one({"_id": ObjectId(character_id)}, {"$set": {"health": health_list}})
+            return True, None
+    return False, "Health tracker not found."
+
+def get_all_user_characters_for_user(user_id: str):
+    """
+    Get all UserCharacter objects for a user.
+    """
+    chars = CharacterRepository.find({"user": user_id})
+    return [UserCharacter.from_dict(c) for c in chars]
+
+def rename_character(user_id: str, old_name: str, new_name: str):
+    """
+    Rename a character for a user.
+    Matches both escaped and unescaped forms for old_name.
+    Disallows non-alphanumeric characters except spaces in new_name.
+    """
+    if old_name is None or new_name is None:
+        return False, "Character name cannot be empty or whitespace only."
+    # Disallow any non-alphanumeric characters except spaces in new_name
+    if not re.fullmatch(r"[A-Za-z0-9 ]+", new_name.strip()):
+        return False, "Character name must only contain alphanumeric characters and spaces."
+    old_name_raw = old_name.strip()
+    old_name_escaped = html.escape(old_name_raw)
+    new_name_sanitized = sanitize_string(new_name.strip())
+
+    # Validate new name
+    if new_name.strip() == "":
+        return False, "Character name cannot be empty or whitespace only."
+    if len(new_name.strip()) > MAX_FIELD_LENGTH:
+        return False, f"Character name must be at most {MAX_FIELD_LENGTH} characters."
+    if len(new_name_sanitized) > MAX_FIELD_LENGTH:
+        return False, f"Character name must be at most {MAX_FIELD_LENGTH} characters."
+
+    # Check uniqueness for sanitized new name
+    if _character_exists(user_id, new_name_sanitized):
+        return False, "A character with that name already exists for you."
+
+    # Try both escaped and raw for lookup
+    char_doc = CharacterRepository.find_one({"user": user_id, "character": old_name_escaped})
+    if not char_doc:
+        char_doc = CharacterRepository.find_one({"user": user_id, "character": old_name_raw})
+    if not char_doc:
+        return False, "Character to rename not found."
+    CharacterRepository.update_one({"_id": char_doc["_id"]}, {"$set": {"character": new_name_sanitized}})
+    return True, None
+
 def remove_character(user_id: str, character: str):
     """
     Remove a character and all its counters for a user.
     Returns (success, error, details) where details is a string of removed counters.
+    Matches both escaped and unescaped forms for character name.
     """
-    character = sanitize_string(character)
-    char_doc = CharacterRepository.find_one({"user": user_id, "character": character})
+    char_doc = _find_character_doc_by_user_and_name(user_id, character)
     if not char_doc:
         return False, "Character not found.", None
 
@@ -625,72 +811,20 @@ def remove_character(user_id: str, character: str):
     CharacterRepository.delete_one({"_id": char_doc["_id"]})
     return True, None, details
 
-def update_counter_comment(character_id: str, counter_name: str, comment: str):
+def _user_at_character_limit(user_id: str) -> bool:
     """
-    Update the comment for a counter.
-    Returns (success, error).
+    Returns True if the user has reached the maximum allowed number of characters.
     """
-    char_doc = _get_character_by_id(character_id)
-    counters = char_doc.get("counters", []) if char_doc else []
-    for c in counters:
-        if c["counter"] == counter_name:
-            c["comment"] = comment
-            CharacterRepository.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": counters}})
-            return True, None
-    return False, "Counter not found."
+    count = characters_collection.count_documents({"user": user_id})
+    return count >= MAX_USER_CHARACTERS
 
-class CounterFactory:
-    @staticmethod
-    def from_dict(data):
-        """
-        Create a Counter object from a dictionary.
-        """
-        return Counter(
-            counter=data.get("counter"),
-            temp=data.get("temp"),
-            perm=data.get("perm"),
-            category=data.get("category"),
-            comment=data.get("comment"),
-            counter_type=data.get("counter_type"),
-            bedlam=data.get("bedlam")
-        )
-
-    @staticmethod
-    def create(counter_type, perm, comment=None, override_name=None):
-        """
-        Create a predefined Counter object using the logic from counter.py.
-        """
-        from counter import PredefinedCounterEnum, CounterFactory as RealFactory
-        # Accept both enum and string for counter_type
-        if isinstance(counter_type, PredefinedCounterEnum):
-            enum_val = counter_type
-        else:
-            enum_val = PredefinedCounterEnum(counter_type)
-        # Use the actual CounterFactory from counter.py
-        return RealFactory.create(enum_val, perm, comment, override_name)
-
-def add_health_level(character_id: str, health_type: str, health_level_name: str):
+def _create_character_entry(user_id: str, character: str) -> dict:
     """
-    Add a health level to a character's health tracker.
-    Returns (success, error).
+    Create a new character entry dictionary for insertion into the database.
     """
-    char_doc = _get_character_by_id(character_id)
-    if not char_doc:
-        return False, "Character not found."
-    health_list = char_doc.get("health", [])
-    # Find the health tracker for the given type
-    health_tracker = next((h for h in health_list if h.get("health_type") == health_type), None)
-    if not health_tracker:
-        return False, "Health tracker not found for this type."
-    # Check for duplicate health level
-    levels = health_tracker.get("health_levels", None)
-    if levels is None:
-        from health import HEALTH_LEVELS
-        levels = list(HEALTH_LEVELS.keys())
-    if health_level_name in levels:
-        return False, "Health level already exists."
-    levels.append(health_level_name)
-    health_tracker["health_levels"] = levels
-    CharacterRepository.update_one({"_id": ObjectId(character_id)}, {"$set": {"health": health_list}})
-    return True, None
-
+    return {
+        "user": user_id,
+        "character": character,
+        "counters": [],
+        "health": []
+    }

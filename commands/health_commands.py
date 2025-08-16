@@ -14,7 +14,7 @@ from utils import (
     add_health_level  # Add import
 )
 from utils import characters_collection, CharacterRepository
-from health import Health, HealthTypeEnum, DamageEnum
+from health import Health, HealthTypeEnum, DamageEnum, HealthLevelEnum
 from bson import ObjectId
 from .autocomplete import (
     character_name_autocomplete,
@@ -172,18 +172,29 @@ def register_health_commands(cog):
         action_msg = f"Healed {levels} levels of damage from {_health_type_display(chimerical)} health."
         await _send_health_response(interaction, character, msg, action_msg)
 
+async def health_level_type_autocomplete(interaction: discord.Interaction, current: str):
+    """Autocomplete health level types from HealthLevelEnum."""
+    return [
+        discord.app_commands.Choice(name=e.value, value=e.value)
+        for e in HealthLevelEnum
+        if current.lower() in e.value.lower()
+    ]
+
 @register_command("configav_group")
 def register_configav_health_commands(cog):
     @cog.configav_group.command(
         name="add_health_level",
         description="Add an extra health level to a character's health tracker"
     )
-    @discord.app_commands.autocomplete(character=character_name_autocomplete)
+    @discord.app_commands.autocomplete(
+        character=character_name_autocomplete,
+        health_level_type=health_level_type_autocomplete
+    )
     async def add_health_level_cmd(
         interaction: discord.Interaction,
         character: str,
         health_type: str,
-        health_level_name: str
+        health_level_type: str
     ):
         user_id = str(interaction.user.id)
         character_id = get_character_id_by_user_and_name(user_id, character)
@@ -197,13 +208,24 @@ def register_configav_health_commands(cog):
             await handle_invalid_health_type(interaction)
             return
 
+        # Validate health_level_type using HealthLevelEnum
+        try:
+            hl_enum = HealthLevelEnum(health_level_type)
+        except ValueError:
+            valid_levels = [e.value for e in HealthLevelEnum]
+            await interaction.response.send_message(
+                f"Health level '{health_level_type}' is not valid. Choose from: {', '.join(valid_levels)}.",
+                ephemeral=True
+            )
+            return
+
         # Add health level
-        success, error = add_health_level(character_id, health_type, health_level_name)
+        success, error = add_health_level(character_id, health_type, health_level_type)
         if not success:
             await interaction.response.send_message(f"Failed to add health level: {error}", ephemeral=True)
             return
 
         await interaction.response.send_message(
-            f"Added health level '{health_level_name}' to {health_type} health tracker for character '{character}'.",
+            f"Added health level '{health_level_type}' to {health_type} health tracker for character '{character}'.",
             ephemeral=True
         )

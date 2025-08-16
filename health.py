@@ -9,6 +9,15 @@ class DamageEnum(enum.Enum):
     Aggravated = "Aggravated"
     Bashing = "Bashing"
 
+class HealthLevelEnum(enum.Enum):
+    Bruised = "Bruised"
+    Hurt = "Hurt"
+    Injured = "Injured"
+    Wounded = "Wounded"
+    Mauled = "Mauled"
+    Crippled = "Crippled"
+    Incapacitated = "Incapacitated"
+
 HEALTH_LEVELS = {
     "Bruised": 0,
     "Hurt": -1,
@@ -60,31 +69,32 @@ class Health:
         return total_levels - len(self.damage)
 
     def _add_damage_to_empty_slots(self, levels: int, damage_type: DamageEnum, available_slots: int):
-        """Add damage to empty health level slots."""
+        """Add damage to empty health level slots. Only prepend if there is space; never shift or reorder existing damage."""
         to_add = min(levels, available_slots)
-        if to_add > 0:
+        if to_add > 0 and available_slots > 0:
             self.damage = [damage_type.value] * to_add + self.damage
-        
-        # Return how much was added and how much remains
+        # If no slots are available, do not modify self.damage
         return to_add, levels - to_add
 
     def _upgrade_existing_damage(self, remaining: int, damage_type: DamageEnum):
-        """Upgrade existing damage based on new damage type."""
+        """
+        Upgrade existing damage in-place, starting from the top of the tracker.
+        Only upgrade bashing slots, never shift or reorder.
+        - Additional bashing upgrades bashing to lethal.
+        - Lethal upgrades bashing to lethal.
+        - Aggravated upgrades bashing to aggravated.
+        """
         converted = 0
-        
-        # Can only upgrade if incoming damage is more severe than existing
         for i in range(len(self.damage)):
             if converted >= remaining:
                 break
-                
             if self.damage[i] == DamageEnum.Bashing.value:
-                if damage_type.value == DamageEnum.Bashing.value:
-                    self.damage[i] = DamageEnum.Lethal.value
+                if damage_type.value == DamageEnum.Aggravated.value:
+                    self.damage[i] = DamageEnum.Aggravated.value
                 else:
-                    self.damage[i] = damage_type.value
+                    # Both bashing and lethal upgrade bashing to lethal
+                    self.damage[i] = DamageEnum.Lethal.value
                 converted += 1
-        
-        # Return how much was converted and how much couldn't be applied
         not_taken = remaining - converted
         return converted, not_taken
 

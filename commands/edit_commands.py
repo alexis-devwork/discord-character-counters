@@ -240,7 +240,11 @@ def register_edit_commands(cog):
             await interaction.response.send_message(
                 f"Character '{character}' renamed to '{new_name}'.", ephemeral=True)
         else:
-            await handle_character_not_found(interaction) if error == "Character to rename not found." else interaction.response.send_message(error or "Failed to rename character.", ephemeral=True)
+            # Always await the response, even for validation errors
+            if error == "Character to rename not found.":
+                await handle_character_not_found(interaction)
+            else:
+                await interaction.response.send_message(error or "Failed to rename character.", ephemeral=True)
 
     @cog.avct_group.command(name="plus", description="Add points to a counter")
     @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)

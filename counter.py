@@ -164,15 +164,21 @@ class Counter:
                     squares.append(":red_square:")
 
             pretty = f"{counter_name}\n{' '.join(squares)}"
+            if self.comment:
+                pretty = f"{pretty}\n-# {self.comment}"
         # Default case for other counter types
         else:
             pretty = self.generate_display(fully_unescape_func, False)
-        # Add comment if present
-        if self.comment:
-            pretty = f"{pretty}\n-# {self.comment}"
         return pretty
 
 class CounterFactory:
+    @staticmethod
+    def from_dict(data):
+        """
+        Create a Counter object from a dictionary.
+        """
+        return Counter.from_dict(data)
+
     @staticmethod
     def create(counter_type, perm, comment=None, override_name=None):
         # Ensure counter_type is a PredefinedCounterEnum

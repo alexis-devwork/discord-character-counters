@@ -49,64 +49,22 @@ class TestCharacterManagement:
             user_id = "test_user_sanitize"
             character_name = "<script>alert('XSS')</script>Character"
 
-            # First, get how many characters the user has (should be 0)
-            characters_before = get_all_user_characters_for_user(user_id)
-            assert len(characters_before) == 0, "User should have no characters initially"
-
-            # Add the character
+            # Should fail due to non-alphanumeric characters (except spaces)
             success, error = add_user_character(user_id, character_name)
-
-            # Verify character was added successfully
-            assert success is True
-            assert error is None
-
-            # Get all characters for user after adding
-            characters_after = get_all_user_characters_for_user(user_id)
-            assert len(characters_after) == 1, "User should have one character after adding"
-
-            # Check that the stored character name is different from the original (was sanitized)
-            stored_character = characters_after[0]
-            assert stored_character.character != character_name, "Character name should be sanitized"
-            
-            # Print debug info about the character names
-            print(f"Original name: {character_name}")
-            print(f"Stored name: {stored_character.character}")
-
-
+            assert success is False
+            assert "alphanumeric characters and spaces" in error
 
             # Add a character with control characters
             character_name_with_controls = "Bad\x00Character\x1FName"
-            
-            # Add the character with control characters
             success, error = add_user_character(user_id, character_name_with_controls)
+            assert success is False
+            assert "alphanumeric characters and spaces" in error
+
+            # Add a character with spaces (should succeed)
+            character_name_with_spaces = "Good Character Name"
+            success, error = add_user_character(user_id, character_name_with_spaces)
             assert success is True
             assert error is None
-
-            # Get all characters for user again
-            characters_final = get_all_user_characters_for_user(user_id)
-            assert len(characters_final) == 2, "User should have two characters now"
-
-            # Find the character that was added second (with control chars)
-            control_character = None
-            for char in characters_final:
-                if char.character != stored_character.character:
-                    control_character = char
-                    break
-            
-            assert control_character is not None, "Could not find the second character"
-            
-            # Print debug info for the control character
-            print(f"Control char original: {character_name_with_controls}")
-            print(f"Control char stored: {control_character.character}")
-            
-            # Verify control characters were removed
-            assert "\x00" not in control_character.character, "Control character \\x00 should be removed"
-            assert "\x1F" not in control_character.character, "Control character \\x1F should be removed"
-            
-            # Verify the text parts remain (making sure it's the right character)
-            assert "Bad" in control_character.character, "Should contain 'Bad'"
-            assert "Character" in control_character.character, "Should contain 'Character'"
-            assert "Name" in control_character.character, "Should contain 'Name'"
 
     # Test character name uniqueness constraint
     def test_character_name_uniqueness(self, test_characters_collection):
@@ -202,49 +160,39 @@ class TestCharacterManagement:
 
             # Try with sanitized name - first get the sanitized form
             html_name = "<i>Character Three</i>"
-            sanitized_html_name = sanitize_string(html_name)
-            print(f"Original HTML name: {html_name}")
-            print(f"Sanitized form: {sanitized_html_name}")
-
-            # Rename the character
+            # Should fail due to non-alphanumeric characters (except spaces)
             success, error = rename_character(user_id, "Character Two", html_name)
+            assert success is False
+            assert "alphanumeric characters and spaces" in error
 
-            # Verify it succeeds with sanitized name
+            # Try renaming to a name that, when sanitized, would match an existing one
+            ampersand_name = "Character & Three"
+            success, error = rename_character(user_id, "character two", ampersand_name)
+            assert success is False
+            assert "alphanumeric characters and spaces" in error
+
+            # Try renaming to a name with spaces (should succeed)
+            spaced_name = "Character Three With Spaces"
+            success, error = rename_character(user_id, "character two", spaced_name)
             assert success is True
             assert error is None
 
-            # Get all characters for user
-            characters = get_all_user_characters_for_user(user_id)
-            assert len(characters) == 2
+            # Try renaming to a name with only spaces (should fail)
+            only_spaces = "    "
+            success, error = rename_character(user_id, "character two", only_spaces)
+            assert success is False
+            # Accept either the "empty" or "alphanumeric characters and spaces" error
+            assert (
+                "empty" in error.lower()
+                or "invalid" in error.lower()
+                or "alphanumeric characters and spaces" in error.lower()
+            )
 
-            # Print all character names for debugging
-            print("Characters after renaming:")
-            for char in characters:
-                print(f"  - {char.character}")
-
-            # Instead of checking for an exact sanitized name, look for a character
-            # that contains parts of the HTML name that would be preserved
-            renamed_character = next((c for c in characters if "Character Three" in c.character), None)
-            assert renamed_character is not None, "Character with 'Character Three' in name not found"
-
-            # Verify that the old name is gone
-            old_character = next((c for c in characters if c.character == "Character Two"), None)
-            assert old_character is None, "Character with old name should not exist"
-
-            # Try renaming to a name that, when sanitized, would match an existing one
-            # First get the sanitized form of "Character & Three"
-            ampersand_name = "Character & Three"
-            sanitized_ampersand = sanitize_string(ampersand_name)
-            print(f"Ampersand name: {ampersand_name}")
-            print(f"Sanitized ampersand: {sanitized_ampersand}")
-
-            # Try to rename
-            success, error = rename_character(user_id, "character two", ampersand_name)
-
-            # For now, we'll skip this assertion as it depends on how sanitization is implemented
-            # Instead, just verify we still have 2 characters
-            characters_final = get_all_user_characters_for_user(user_id)
-            assert len(characters_final) == 2, "Should still have 2 characters after rename attempt"
+            # Try renaming to a name with control characters (should fail)
+            control_name = "Bad\x00Name"
+            success, error = rename_character(user_id, "character two", control_name)
+            assert success is False
+            assert "alphanumeric characters and spaces" in error
 
     def test_maximum_allowed_characters_per_user(self, test_characters_collection):
         with patch('utils.characters_collection', test_characters_collection), \

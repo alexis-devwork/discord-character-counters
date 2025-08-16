@@ -220,3 +220,4 @@ This project includes a comprehensive test suite covering character management, 
 The test suite includes mock objects for Discord interactions, allowing tests to run without an actual Discord connection.
 
 ---
+
