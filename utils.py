@@ -2,6 +2,8 @@ import discord
 from discord.ext import commands
 import html
 import re
+import os
+from dotenv import load_dotenv
 from config import (
     MAX_USER_CHARACTERS,
     MAX_COUNTERS_PER_CHARACTER,
@@ -19,9 +21,18 @@ from counter import (
 )
 from health import Health, HealthTypeEnum
 from bson import ObjectId
+from collections import defaultdict
 
-client = MongoClient("mongodb+srv://theirony:K6vS6W5ZJrRr8cOR@avdiscord.3saqe9v.mongodb.net/?retryWrites=true&w=majority&appName=avdiscord")
-db = client["avct_db"]
+# Load environment variables
+load_dotenv()
+
+# Get MongoDB connection details from environment variables
+mongo_connection_string = os.getenv("MONGO_CONNECTION_STRING")
+mongo_db_name = os.getenv("MONGO_DB_NAME")
+
+# Connect to MongoDB
+client = MongoClient(mongo_connection_string)
+db = client[mongo_db_name]
 characters_collection = db["characters"]
 
 class MyBot(commands.Bot):
@@ -48,22 +59,38 @@ def add_user_character(user_id: str, character: str):
         character = sanitize_and_validate("character", character, MAX_FIELD_LENGTH)
     except ValueError as ve:
         return False, str(ve)
-    # Always sanitize before lookup
-    character = sanitize_string(character)
-    if characters_collection.find_one({"user": user_id, "character": character}):
+
+    # Check if character already exists
+    if _character_exists(user_id, character):
         return False, "A character with that name already exists for you."
+
     # Check character limit
-    count = characters_collection.count_documents({"user": user_id})
-    if count >= MAX_USER_CHARACTERS:
+    if _user_at_character_limit(user_id):
         return False, f"You have reached the maximum number of characters ({MAX_USER_CHARACTERS})."
-    new_entry = {
+
+    # Create and insert the new character
+    new_entry = _create_character_entry(user_id, character)
+    characters_collection.insert_one(new_entry)
+    return True, None
+
+def _character_exists(user_id: str, character: str) -> bool:
+    """Check if a character with the given name exists for the user."""
+    character = sanitize_string(character)
+    return characters_collection.find_one({"user": user_id, "character": character}) is not None
+
+def _user_at_character_limit(user_id: str) -> bool:
+    """Check if the user has reached the maximum character limit."""
+    count = characters_collection.count_documents({"user": user_id})
+    return count >= MAX_USER_CHARACTERS
+
+def _create_character_entry(user_id: str, character: str) -> dict:
+    """Create a new character entry dictionary."""
+    return {
         "user": user_id,
         "character": character,
         "counters": [],
         "health": [],
     }
-    characters_collection.insert_one(new_entry)
-    return True, None
 
 def get_all_user_characters_for_user(user_id: str):
     chars = list(characters_collection.find({"user": user_id}))
@@ -71,61 +98,111 @@ def get_all_user_characters_for_user(user_id: str):
     return [UserCharacter(c["user"], sanitize_string(c["character"]), c.get("counters", []), c.get("health", []), id=str(c["_id"])) for c in chars]
 
 def add_counter(character_id: str, counter_name: str, temp: int, perm: int, category: str = CategoryEnum.general.value, comment: str = None):
+    # Validate inputs
     try:
-        counter_name = sanitize_and_validate("counter", counter_name, MAX_FIELD_LENGTH)
-        category = sanitize_and_validate("category", category, MAX_FIELD_LENGTH)
-        if comment is not None:
-            comment = sanitize_and_validate("comment", comment, MAX_COMMENT_LENGTH)
+        counter_name, category, comment = _validate_counter_inputs(counter_name, category, comment)
     except ValueError as ve:
         return False, str(ve)
-    # Convert character_id to ObjectId for MongoDB lookup
-    char_doc = characters_collection.find_one({"_id": ObjectId(character_id)})
+
+    # Get character document
+    char_doc = _get_character_by_id(character_id)
     if not char_doc:
         return False, "Character not found."
+
     counters = char_doc.get("counters", [])
-    if any(c["counter"] == counter_name for c in counters):
+
+    # Check if counter already exists
+    if _counter_exists(counters, counter_name):
         return False, "A counter with that name exists for this character."
-    if len(counters) >= MAX_COUNTERS_PER_CHARACTER:
+
+    # Check counter limit
+    if _character_at_counter_limit(counters):
         return False, f"This character has reached the maximum number of counters ({MAX_COUNTERS_PER_CHARACTER})."
+
+    # Create and add the counter
     new_counter = Counter(counter_name, temp, perm, category, comment).__dict__
     counters.append(new_counter)
     characters_collection.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": counters}})
     return True, None
 
+def _validate_counter_inputs(counter_name: str, category: str, comment: str = None):
+    """Validate and sanitize counter inputs."""
+    counter_name = sanitize_and_validate("counter", counter_name, MAX_FIELD_LENGTH)
+    category = sanitize_and_validate("category", category, MAX_FIELD_LENGTH)
+    if comment is not None:
+        comment = sanitize_and_validate("comment", comment, MAX_COMMENT_LENGTH)
+    return counter_name, category, comment
+
+def _get_character_by_id(character_id: str):
+    """Get a character document by ID."""
+    return characters_collection.find_one({"_id": ObjectId(character_id)})
+
+def _counter_exists(counters: list, counter_name: str) -> bool:
+    """Check if a counter with the given name exists in the counters list."""
+    return any(c["counter"] == counter_name for c in counters)
+
+def _character_at_counter_limit(counters: list) -> bool:
+    """Check if the character has reached the maximum counter limit."""
+    return len(counters) >= MAX_COUNTERS_PER_CHARACTER
+
 def update_counter(character_id: str, counter_name: str, field: str, delta: int):
-    # Convert character_id to ObjectId for MongoDB lookup
-    char_doc = characters_collection.find_one({"_id": ObjectId(character_id)})
+    # Get character document
+    char_doc = _get_character_by_id(character_id)
     if not char_doc:
         return False, "Character not found."
+
     counters = char_doc.get("counters", [])
     for c in counters:
         if c["counter"] == counter_name:
-            if field == "temp":
-                new_value = c["temp"] + delta
-                if c["counter_type"] in ["perm_is_maximum", "perm_is_maximum_bedlam"]:
-                    if new_value > c["perm"]:
-                        c["temp"] = c["perm"]
-                    elif new_value < 0:
-                        return False, "Cannot decrement temp below zero."
-                    else:
-                        c["temp"] = new_value
-                else:
-                    if new_value < 0:
-                        return False, "Cannot decrement temp below zero."
-                    c["temp"] = new_value
-            elif field == "perm":
-                new_value = c["perm"] + delta
-                if new_value < 0:
-                    return False, "Cannot decrement perm below zero."
-                c["perm"] = new_value
-                if c["counter_type"] in ["perm_is_maximum", "perm_is_maximum_bedlam"]:
-                    if c["temp"] > c["perm"]:
-                        c["temp"] = c["perm"]
-            else:
-                return False, "Invalid field."
+            success, error = _update_counter_field(c, field, delta)
+            if not success:
+                return False, error
+
             characters_collection.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": counters}})
             return True, None
     return False, "Counter not found."
+
+def _update_counter_field(counter: dict, field: str, delta: int):
+    """Update a specific field of a counter by the given delta."""
+    if field == "temp":
+        return _update_temp_field(counter, delta)
+    elif field == "perm":
+        return _update_perm_field(counter, delta)
+    else:
+        return False, "Invalid field."
+
+def _update_temp_field(counter: dict, delta: int):
+    """Update the temp field of a counter."""
+    new_value = counter["temp"] + delta
+
+    if counter["counter_type"] in ["perm_is_maximum", "perm_is_maximum_bedlam"]:
+        if new_value > counter["perm"]:
+            counter["temp"] = counter["perm"]
+        elif new_value < 0:
+            return False, "Cannot decrement temp below zero."
+        else:
+            counter["temp"] = new_value
+    else:
+        if new_value < 0:
+            return False, "Cannot decrement temp below zero."
+        counter["temp"] = new_value
+
+    return True, None
+
+def _update_perm_field(counter: dict, delta: int):
+    """Update the perm field of a counter."""
+    new_value = counter["perm"] + delta
+    if new_value < 0:
+        return False, "Cannot decrement perm below zero."
+
+    counter["perm"] = new_value
+
+    # Adjust temp if necessary
+    if counter["counter_type"] in ["perm_is_maximum", "perm_is_maximum_bedlam"]:
+        if counter["temp"] > counter["perm"]:
+            counter["temp"] = counter["perm"]
+
+    return True, None
 
 def set_counter_comment(character_id: str, counter_name: str, comment: str):
     comment = sanitize_string(comment)
@@ -229,28 +306,49 @@ async def counter_name_autocomplete_for_character(interaction: discord.Interacti
 def remove_character(user_id: str, character_name: str):
     if character_name is None or not validate_length("character", character_name, MAX_FIELD_LENGTH):
         return False, "Invalid character name.", None
+
     character_name = sanitize_string(character_name)
     char_doc = characters_collection.find_one({"user": user_id, "character": character_name})
+
     if not char_doc:
         return False, "Character not found.", None
-    counters = char_doc.get("counters", [])
-    details = "\n".join([f"{c['counter']}: {c['temp']}/{c['perm']}" for c in counters])
+
+    # Get counter details before deleting
+    details = _format_counter_details(char_doc.get("counters", []))
+
+    # Delete character
     characters_collection.delete_one({"_id": char_doc["_id"]})
+
     return True, None, details
+
+def _format_counter_details(counters: list) -> str:
+    """Format counter details into a string."""
+    return "\n".join([f"{c['counter']}: {c['temp']}/{c['perm']}" for c in counters])
 
 def remove_counter(character_id: str, counter_name: str):
     if counter_name is None or not validate_length("counter", counter_name, MAX_FIELD_LENGTH):
         return False, "Invalid counter name.", None
-    # Convert character_id to ObjectId for MongoDB lookup
-    from bson import ObjectId
-    char_doc = characters_collection.find_one({"_id": ObjectId(character_id)})
+
+    # Get character document
+    char_doc = _get_character_by_id(character_id)
     if not char_doc:
         return False, "Character not found.", None
+
+    # Remove counter
     counters = char_doc.get("counters", [])
     counters = [c for c in counters if c["counter"] != counter_name]
+
+    # Update character
     characters_collection.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": counters}})
-    details = "\n".join([f"{c['counter']} [{c['category']}]: {c['temp']}/{c['perm']}" for c in counters])
+
+    # Format remaining counters details
+    details = _format_remaining_counters(counters)
+
     return True, None, details
+
+def _format_remaining_counters(counters: list) -> str:
+    """Format remaining counters into a string."""
+    return "\n".join([f"{c['counter']} [{c['category']}]: {c['temp']}/{c['perm']}" for c in counters])
 
 def set_counter_category(character_id: str, counter_name: str, category: str):
     try:
@@ -258,16 +356,20 @@ def set_counter_category(character_id: str, counter_name: str, category: str):
         category = sanitize_and_validate("category", category, MAX_FIELD_LENGTH)
     except ValueError as ve:
         return False, str(ve)
-    # Convert character_id to ObjectId for MongoDB lookup
-    char_doc = characters_collection.find_one({"_id": ObjectId(character_id)})
+
+    # Get character document
+    char_doc = _get_character_by_id(character_id)
     if not char_doc:
         return False, "Character not found."
+
+    # Update counter category
     counters = char_doc.get("counters", [])
     for c in counters:
         if c["counter"] == counter_name:
             c["category"] = category
             characters_collection.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": counters}})
             return True, None
+
     return False, "Counter not found."
 
 def set_counter_comment(character_id: str, counter_name: str, comment: str):
@@ -276,16 +378,20 @@ def set_counter_comment(character_id: str, counter_name: str, comment: str):
         comment = sanitize_and_validate("comment", comment, MAX_COMMENT_LENGTH)
     except ValueError as ve:
         return False, str(ve)
-    # Convert character_id to ObjectId for MongoDB lookup
-    char_doc = characters_collection.find_one({"_id": ObjectId(character_id)})
+
+    # Get character document
+    char_doc = _get_character_by_id(character_id)
     if not char_doc:
         return False, "Character not found."
+
+    # Update counter comment
     counters = char_doc.get("counters", [])
     for c in counters:
         if c["counter"] == counter_name:
             c["comment"] = comment
             characters_collection.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": counters}})
             return True, None
+
     return False, "Counter not found."
 
 def fully_unescape(s: str) -> str:
@@ -302,86 +408,143 @@ def fully_unescape(s: str) -> str:
 def rename_character(user_id: str, old_name: str, new_name: str):
     if not validate_length("character", old_name, MAX_FIELD_LENGTH):
         return False, f"Old name must be at most {MAX_FIELD_LENGTH} characters."
+
     try:
         new_name = sanitize_and_validate("character", new_name, MAX_FIELD_LENGTH)
     except ValueError as ve:
         return False, str(ve)
+
     old_name = sanitize_string(old_name)
     new_name = sanitize_string(new_name)
+
+    # Check if source character exists
     char_doc = characters_collection.find_one({"user": user_id, "character": old_name})
     if not char_doc:
         return False, "Character to rename not found."
+
+    # Check if target name already exists
     if characters_collection.find_one({"user": user_id, "character": new_name}):
         return False, "A character with that name already exists for you."
+
+    # Rename character
     characters_collection.update_one({"_id": char_doc["_id"]}, {"$set": {"character": new_name}})
+
     return True, None
 
 def rename_counter(character_id: str, old_name: str, new_name: str):
     if not validate_length("counter", old_name, MAX_FIELD_LENGTH):
         return False, f"Old name must be at most {MAX_FIELD_LENGTH} characters."
+
     try:
         new_name = sanitize_and_validate("counter", new_name, MAX_FIELD_LENGTH)
     except ValueError as ve:
         return False, str(ve)
-    char_doc = characters_collection.find_one({"_id": character_id})
+
+    # Get character document
+    char_doc = _get_character_by_id(character_id)
     if not char_doc:
         return False, "Character not found."
+
     counters = char_doc.get("counters", [])
+
+    # Check if target name already exists
     if any(c["counter"] == new_name for c in counters):
         return False, "A counter with that name already exists for this character."
+
+    # Rename counter
     for c in counters:
         if c["counter"] == old_name:
             c["counter"] = new_name
-            characters_collection.update_one({"_id": character_id}, {"$set": {"counters": counters}})
+            characters_collection.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": counters}})
             return True, None
+
     return False, "Counter to rename not found."
 
 def add_predefined_counter(character_id: str, counter_type: str, perm: int, comment: str = None, override_name: str = None):
-    # Convert character_id to ObjectId for MongoDB lookup
-    char_doc = characters_collection.find_one({"_id": ObjectId(character_id)})
+    # Get character document
+    char_doc = _get_character_by_id(character_id)
     if not char_doc:
         return False, "Character not found."
+
+    # Validate counter type
     try:
         enum_type = PredefinedCounterEnum(counter_type)
     except ValueError:
         return False, "Invalid predefined counter type."
+
+    # Process counter name
     name = sanitize_string(override_name if override_name else enum_type.value)
+
     counters = char_doc.get("counters", [])
+
+    # Check if counter already exists
     if any(sanitize_string(c["counter"]) == name for c in counters):
         return False, "A counter with that name exists for this character."
+
+    # Check counter limit
     if len(counters) >= MAX_COUNTERS_PER_CHARACTER:
         return False, f"This character has reached the maximum number of counters ({MAX_COUNTERS_PER_CHARACTER})."
+
+    # Create and add counter
     counter_obj = CounterFactory.create(enum_type, perm, comment, override_name).__dict__
     counter_obj["counter"] = name  # Ensure counter name is sanitized
     counters.append(counter_obj)
+
     characters_collection.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": counters}})
+
     return True, None
 
 def generate_counters_output(counters, fully_unescape_func):
-    from collections import defaultdict
+    # Group counters by category
+    grouped_counters = _group_counters_by_category(counters)
+
+    # Generate output lines
+    msg_lines = []
+
+    # Add counters in order of category enum
+    shown_categories = _add_ordered_categories(grouped_counters, msg_lines, fully_unescape_func)
+
+    # Add any remaining categories
+    _add_remaining_categories(grouped_counters, shown_categories, msg_lines, fully_unescape_func)
+
+    return "\n".join(msg_lines).strip()
+
+def _group_counters_by_category(counters):
+    """Group counters by their category."""
     grouped = defaultdict(list)
     for c in counters:
         grouped[c.category].append(c)
-    msg_lines = []
-    category_order = [c.value for c in CategoryEnum]
+    return grouped
+
+def _add_ordered_categories(grouped_counters, msg_lines, fully_unescape_func):
+    """Add counters from categories in the order defined by CategoryEnum."""
     shown = set()
+    category_order = [c.value for c in CategoryEnum]
+
     for cat in category_order:
-        if cat in grouped:
-            cat_title = f"**{cat.capitalize()}**"
-            msg_lines.append(cat_title)
-            for c in sorted(grouped[cat], key=lambda x: x.counter.lower()):
-                line = c.generate_display(fully_unescape_func)
-                msg_lines.append(line)
+        if cat in grouped_counters:
+            # Add category header
+            msg_lines.append(f"**{cat.capitalize()}**")
+
+            # Add sorted counters
+            for c in sorted(grouped_counters[cat], key=lambda x: x.counter.lower()):
+                msg_lines.append(c.generate_display(fully_unescape_func))
                 if c.comment:
                     msg_lines.append(f"-# {fully_unescape_func(c.comment)}")
+
             shown.add(cat)
-    for cat in grouped.keys():
-        if cat not in shown:
-            cat_title = f"**{cat.capitalize()}**"
-            msg_lines.append(cat_title)
-            for c in sorted(grouped[cat], key=lambda x: x.counter.lower()):
-                line = c.generate_display(fully_unescape_func)
-                msg_lines.append(line)
+
+    return shown
+
+def _add_remaining_categories(grouped_counters, shown_categories, msg_lines, fully_unescape_func):
+    """Add counters from categories not in CategoryEnum."""
+    for cat in grouped_counters.keys():
+        if cat not in shown_categories:
+            # Add category header
+            msg_lines.append(f"**{cat.capitalize()}**")
+
+            # Add sorted counters
+            for c in sorted(grouped_counters[cat], key=lambda x: x.counter.lower()):
+                msg_lines.append(c.generate_display(fully_unescape_func))
                 if c.comment:
                     msg_lines.append(f"-# {fully_unescape_func(c.comment)}")
-    return "\n".join(msg_lines).strip()
