@@ -668,3 +668,29 @@ class CounterFactory:
             enum_val = PredefinedCounterEnum(counter_type)
         # Use the actual CounterFactory from counter.py
         return RealFactory.create(enum_val, perm, comment, override_name)
+
+def add_health_level(character_id: str, health_type: str, health_level_name: str):
+    """
+    Add a health level to a character's health tracker.
+    Returns (success, error).
+    """
+    char_doc = _get_character_by_id(character_id)
+    if not char_doc:
+        return False, "Character not found."
+    health_list = char_doc.get("health", [])
+    # Find the health tracker for the given type
+    health_tracker = next((h for h in health_list if h.get("health_type") == health_type), None)
+    if not health_tracker:
+        return False, "Health tracker not found for this type."
+    # Check for duplicate health level
+    levels = health_tracker.get("health_levels", None)
+    if levels is None:
+        from health import HEALTH_LEVELS
+        levels = list(HEALTH_LEVELS.keys())
+    if health_level_name in levels:
+        return False, "Health level already exists."
+    levels.append(health_level_name)
+    health_tracker["health_levels"] = levels
+    CharacterRepository.update_one({"_id": ObjectId(character_id)}, {"$set": {"health": health_list}})
+    return True, None
+

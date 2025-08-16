@@ -5,6 +5,35 @@ import sys
 
 # Import health-related functionality
 from health import Health, HealthTypeEnum, DamageEnum, display_health, HEALTH_LEVELS
+from utils import add_health_level
+from bson import ObjectId
+
+class DummyRepo:
+    """Dummy repository for mocking CharacterRepository in add_health_level tests."""
+    def __init__(self):
+        self.docs = {}
+
+    def find_one(self, query):
+        _id = query.get("_id")
+        return self.docs.get(str(_id))
+
+    def update_one(self, query, update):
+        _id = query.get("_id")
+        doc = self.docs.get(str(_id))
+        if doc:
+            doc.update(update["$set"])
+
+def make_char_doc(_id, health_type="normal", health_levels=None):
+    return {
+        "_id": ObjectId(_id),
+        "user": "user1",
+        "character": "TestChar",
+        "health": [{
+            "health_type": health_type,
+            "damage": [],
+            "health_levels": health_levels if health_levels is not None else ["Bruised", "Hurt"]
+        }]
+    }
 
 class TestHealthSystem:
 
@@ -189,3 +218,61 @@ class TestHealthSystem:
         assert ":regional_indicator_b:" in combined_display  # Normal bashing
         assert ":regional_indicator_l:" in combined_display  # Normal lethal
         assert ":regional_indicator_a:" in combined_display  # Chimerical aggravated
+
+    def test_add_health_level_success(monkeypatch):
+        repo = DummyRepo()
+        char_id = "507f1f77bcf86cd799439011"
+        doc = make_char_doc(char_id)
+        repo.docs[char_id] = doc
+
+        monkeypatch.setattr("utils.CharacterRepository", repo)
+        success, error = add_health_level(char_id, "normal", "ExtraLevel")
+        assert success
+        assert error is None
+        assert "ExtraLevel" in doc["health"][0]["health_levels"]
+
+    def test_add_health_level_duplicate(monkeypatch):
+        repo = DummyRepo()
+        char_id = "507f1f77bcf86cd799439012"
+        doc = make_char_doc(char_id, health_levels=["Bruised", "Hurt", "ExtraLevel"])
+        repo.docs[char_id] = doc
+
+        monkeypatch.setattr("utils.CharacterRepository", repo)
+        success, error = add_health_level(char_id, "normal", "ExtraLevel")
+        assert not success
+        assert error == "Health level already exists."
+
+    def test_add_health_level_no_tracker(monkeypatch):
+        repo = DummyRepo()
+        char_id = "507f1f77bcf86cd799439013"
+        doc = make_char_doc(char_id)
+        doc["health"] = []  # No health tracker
+        repo.docs[char_id] = doc
+
+        monkeypatch.setattr("utils.CharacterRepository", repo)
+        success, error = add_health_level(char_id, "normal", "ExtraLevel")
+        assert not success
+        assert error == "Health tracker not found for this type."
+
+    def test_add_health_level_character_not_found(monkeypatch):
+        repo = DummyRepo()
+        char_id = "507f1f77bcf86cd799439014"
+        # No doc added
+        monkeypatch.setattr("utils.CharacterRepository", repo)
+        success, error = add_health_level(char_id, "normal", "ExtraLevel")
+        assert not success
+        assert error == "Character not found."
+
+    def test_health_class_dynamic_levels():
+        health = Health(health_type="normal", health_levels=["Bruised", "Hurt"])
+        assert health.health_levels == ["Bruised", "Hurt"]
+        health.set_health_levels(["Bruised", "Hurt", "Extra"])
+        assert health.health_levels == ["Bruised", "Hurt", "Extra"]
+
+    def test_health_add_damage_with_extra_level():
+        health = Health(health_type="normal", health_levels=["Bruised", "Hurt", "Extra"])
+        health.add_damage(3, DamageEnum.Bashing)
+        assert health.damage == [DamageEnum.Bashing.value] * 3
+        # Adding more damage than levels
+        msg = health.add_damage(2, DamageEnum.Lethal)
+        assert "could not be taken" in msg
