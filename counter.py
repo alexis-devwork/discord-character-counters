@@ -46,6 +46,21 @@ class CategoryEnum(enum.Enum):
 
 class Counter:
     def __init__(self, counter, temp, perm, category, comment=None, bedlam=0, counter_type="single_number"):
+        # Prevent negative values
+        if temp is not None and temp < 0:
+            raise ValueError("temp cannot be below zero")
+        if perm is not None and perm < 0:
+            raise ValueError("perm cannot be below zero")
+        if bedlam is not None and bedlam < 0:
+            raise ValueError("bedlam cannot be below zero")
+        # For perm_is_maximum and perm_is_maximum_bedlam, temp cannot exceed perm
+        if counter_type in ["perm_is_maximum", "perm_is_maximum_bedlam"]:
+            if temp is not None and perm is not None and temp > perm:
+                raise ValueError("temp cannot be greater than perm for this counter type")
+        # For perm_is_maximum_bedlam, bedlam cannot exceed perm
+        if counter_type == "perm_is_maximum_bedlam":
+            if bedlam is not None and perm is not None and bedlam > perm:
+                raise ValueError("bedlam cannot be greater than perm for this counter type")
         self.counter = counter
         self.temp = temp
         self.perm = perm
@@ -134,8 +149,18 @@ class Counter:
 
 class CounterFactory:
     @staticmethod
-    def create(counter_type: PredefinedCounterEnum, perm, comment=None, override_name=None):
+    def create(counter_type, perm, comment=None, override_name=None):
+        # Ensure counter_type is a PredefinedCounterEnum
+        if not isinstance(counter_type, PredefinedCounterEnum):
+            raise ValueError("counter_type must be a PredefinedCounterEnum")
+        # Prevent negative perm
+        if perm is not None and perm < 0:
+            raise ValueError("perm cannot be below zero")
         name = override_name if override_name else counter_type.value
+        # Require name for project_roll and item_with_charges
+        if counter_type in (PredefinedCounterEnum.project_roll, PredefinedCounterEnum.item_with_charges):
+            if not override_name:
+                raise ValueError("A name must be provided for project_roll and item_with_charges counters.")
         match counter_type:
             case PredefinedCounterEnum.glory:
                 return CounterFactory.create_glory(perm, comment, name)
@@ -154,6 +179,7 @@ class CounterFactory:
             case PredefinedCounterEnum.glamour:
                 return CounterFactory.create_glamour(perm, comment, name)
             case PredefinedCounterEnum.nightmare:
+                # Nightmare always has temp=0, perm=10
                 return CounterFactory.create_nightmare(comment, name)
             case PredefinedCounterEnum.banality:
                 return CounterFactory.create_banality(perm, comment, name)
@@ -170,6 +196,8 @@ class CounterFactory:
 
     @staticmethod
     def create_willpower(perm, comment=None, name=None):
+        if perm is not None and perm < 0:
+            raise ValueError("perm cannot be below zero")
         return Counter(
             counter=name if name else "willpower",
             temp=perm,
@@ -181,6 +209,8 @@ class CounterFactory:
 
     @staticmethod
     def create_mana(perm, comment=None, name=None):
+        if perm is not None and perm < 0:
+            raise ValueError("perm cannot be below zero")
         return Counter(
             counter=name if name else "mana",
             temp=perm,
@@ -192,6 +222,8 @@ class CounterFactory:
 
     @staticmethod
     def create_blood_pool(perm, comment=None, name=None):
+        if perm is not None and perm < 0:
+            raise ValueError("perm cannot be below zero")
         return Counter(
             counter=name if name else "blood pool",
             temp=perm,
@@ -203,8 +235,10 @@ class CounterFactory:
 
     @staticmethod
     def create_willpower_fae(perm, comment=None, name=None):
+        if perm is not None and perm < 0:
+            raise ValueError("perm cannot be below zero")
         return Counter(
-            counter="willpower",  # Always set to "willpower" regardless of name parameter
+            counter="willpower",
             temp=perm,
             perm=perm,
             bedlam=0,
@@ -215,6 +249,8 @@ class CounterFactory:
 
     @staticmethod
     def create_glamour(perm, comment=None, name=None):
+        if perm is not None and perm < 0:
+            raise ValueError("perm cannot be below zero")
         return Counter(
             counter="glamour" if not name else name,
             temp=perm,
@@ -226,6 +262,7 @@ class CounterFactory:
 
     @staticmethod
     def create_nightmare(comment=None, name=None):
+        # Nightmare always has temp=0, perm=10
         return Counter(
             counter="nightmare" if not name else name,
             temp=0,
@@ -237,6 +274,8 @@ class CounterFactory:
 
     @staticmethod
     def create_banality(perm, comment=None, name=None):
+        if perm is not None and perm < 0:
+            raise ValueError("perm cannot be below zero")
         return Counter(
             counter="banality" if not name else name,
             temp=perm,
@@ -248,6 +287,8 @@ class CounterFactory:
 
     @staticmethod
     def create_glory(perm, comment=None, name=None):
+        if perm is not None and perm < 0:
+            raise ValueError("perm cannot be below zero")
         return Counter(
             counter=name if name else "glory",
             temp=0,
@@ -259,6 +300,8 @@ class CounterFactory:
 
     @staticmethod
     def create_honor(perm, comment=None, name=None):
+        if perm is not None and perm < 0:
+            raise ValueError("perm cannot be below zero")
         return Counter(
             counter=name if name else "honor",
             temp=0,
@@ -270,6 +313,8 @@ class CounterFactory:
 
     @staticmethod
     def create_wisdom(perm, comment=None, name=None):
+        if perm is not None and perm < 0:
+            raise ValueError("perm cannot be below zero")
         return Counter(
             counter=name if name else "wisdom",
             temp=0,
@@ -281,6 +326,8 @@ class CounterFactory:
 
     @staticmethod
     def create_rage(perm, comment=None, name=None):
+        if perm is not None and perm < 0:
+            raise ValueError("perm cannot be below zero")
         return Counter(
             counter="rage" if not name else name,
             temp=perm,
@@ -292,6 +339,8 @@ class CounterFactory:
 
     @staticmethod
     def create_gnosis(perm, comment=None, name=None):
+        if perm is not None and perm < 0:
+            raise ValueError("perm cannot be below zero")
         return Counter(
             counter="gnosis" if not name else name,
             temp=perm,
@@ -305,6 +354,8 @@ class CounterFactory:
     def create_item_with_charges(perm, comment=None, name=None):
         if not name:
             raise ValueError("A name must be provided for item_with_charges counters.")
+        if perm is not None and perm < 0:
+            raise ValueError("perm cannot be below zero")
         return Counter(
             counter=name,
             temp=perm,
@@ -318,6 +369,8 @@ class CounterFactory:
     def create_project_roll(perm, comment=None, name=None):
         if not name:
             raise ValueError("A name must be provided for project_roll counters.")
+        if perm is not None and perm < 0:
+            raise ValueError("perm cannot be below zero")
         return Counter(
             counter=name,
             temp=0,

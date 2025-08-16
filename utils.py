@@ -56,6 +56,9 @@ def sanitize_string(s: str) -> str:
     return html.escape(s)
 
 def add_user_character(user_id: str, character: str):
+    # Prevent empty or whitespace-only character names
+    if character is None or character.strip() == "":
+        return False, "Character name cannot be empty or whitespace only."
     try:
         character = sanitize_and_validate("character", character, MAX_FIELD_LENGTH)
     except ValueError as ve:
@@ -98,7 +101,20 @@ def get_all_user_characters_for_user(user_id: str):
     # Ensure character names are sanitized for consistency
     return [UserCharacter(c["user"], sanitize_string(c["character"]), c.get("counters", []), c.get("health", []), id=str(c["_id"])) for c in chars]
 
-def add_counter(character_id: str, counter_name: str, temp: int, perm: int, category: str = CategoryEnum.general.value, comment: str = None):
+def add_counter(character_id: str, counter_name: str, temp: int, perm: int, category: str = CategoryEnum.general.value, comment: str = None, counter_type: str = "single_number"):
+    # Prevent empty or whitespace-only counter names
+    if counter_name is None or counter_name.strip() == "":
+        return False, "Counter name cannot be empty or whitespace only."
+    # Prevent negative values
+    if temp is not None and temp < 0:
+        return False, "Temp value cannot be below zero."
+    if perm is not None and perm < 0:
+        return False, "Perm value cannot be below zero."
+    # Validate counter_type
+    from counter import CounterTypeEnum
+    valid_types = {ct.value for ct in CounterTypeEnum}
+    if counter_type not in valid_types:
+        return False, "Invalid counter type."
     # Validate inputs
     try:
         counter_name, category, comment = _validate_counter_inputs(counter_name, category, comment)
@@ -112,8 +128,9 @@ def add_counter(character_id: str, counter_name: str, temp: int, perm: int, cate
 
     counters = char_doc.get("counters", [])
 
-    # Check if counter already exists
-    if _counter_exists(counters, counter_name):
+    # Sanitize counter_name before checking for duplicates
+    sanitized_name = sanitize_string(counter_name)
+    if any(sanitize_string(c["counter"]).lower() == sanitized_name.lower() for c in counters):
         return False, "A counter with that name exists for this character."
 
     # Check counter limit
@@ -121,7 +138,7 @@ def add_counter(character_id: str, counter_name: str, temp: int, perm: int, cate
         return False, f"This character has reached the maximum number of counters ({MAX_COUNTERS_PER_CHARACTER})."
 
     # Create and add the counter
-    new_counter = Counter(counter_name, temp, perm, category, comment).__dict__
+    new_counter = Counter(counter_name, temp, perm, category, comment, counter_type=counter_type).__dict__
     counters.append(new_counter)
     characters_collection.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": counters}})
     return True, None
@@ -146,7 +163,11 @@ def _character_at_counter_limit(counters: list) -> bool:
     """Check if the character has reached the maximum counter limit."""
     return len(counters) >= MAX_COUNTERS_PER_CHARACTER
 
-def update_counter(character_id: str, counter_name: str, field: str, delta: int):
+def update_counter(character_id: str, counter_name: str, field: str, value: int):
+    # Prevent negative updates
+    if value is not None and value < 0:
+        return False, "Value cannot be below zero."
+
     # Get character document
     char_doc = _get_character_by_id(character_id)
     if not char_doc:
@@ -155,7 +176,7 @@ def update_counter(character_id: str, counter_name: str, field: str, delta: int)
     counters = char_doc.get("counters", [])
     for c in counters:
         if c["counter"] == counter_name:
-            success, error = _update_counter_field(c, field, delta)
+            success, error = _update_counter_field(c, field, value)
             if not success:
                 return False, error
 
@@ -395,6 +416,26 @@ def set_counter_comment(character_id: str, counter_name: str, comment: str):
 
     return False, "Counter not found."
 
+def update_counter_comment(character_id: str, counter_name: str, new_comment: str):
+    try:
+        counter_name = sanitize_and_validate("counter", counter_name, MAX_FIELD_LENGTH)
+        new_comment = sanitize_and_validate("comment", new_comment, MAX_COMMENT_LENGTH)
+    except ValueError as ve:
+        return False, str(ve)
+
+    char_doc = _get_character_by_id(character_id)
+    if not char_doc:
+        return False, "Character not found."
+
+    counters = char_doc.get("counters", [])
+    for c in counters:
+        if c["counter"] == counter_name:
+            c["comment"] = new_comment
+            characters_collection.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": counters}})
+            return True, None
+
+    return False, "Counter not found."
+
 def fully_unescape(s: str) -> str:
     import re
     s = html.unescape(s)
@@ -407,6 +448,9 @@ def fully_unescape(s: str) -> str:
     return re.sub(r'&#(x[0-9A-Fa-f]+|\d+);', numeric_entity_replacer, s)
 
 def rename_character(user_id: str, old_name: str, new_name: str):
+    # Prevent empty or whitespace-only new name
+    if new_name is None or new_name.strip() == "":
+        return False, "Character name cannot be empty or whitespace only."
     if not validate_length("character", old_name, MAX_FIELD_LENGTH):
         return False, f"Old name must be at most {MAX_FIELD_LENGTH} characters."
 
@@ -433,6 +477,9 @@ def rename_character(user_id: str, old_name: str, new_name: str):
     return True, None
 
 def rename_counter(character_id: str, old_name: str, new_name: str):
+    # Prevent empty or whitespace-only new name
+    if new_name is None or new_name.strip() == "":
+        return False, "Counter name cannot be empty or whitespace only."
     if not validate_length("counter", old_name, MAX_FIELD_LENGTH):
         return False, f"Old name must be at most {MAX_FIELD_LENGTH} characters."
 
@@ -549,3 +596,23 @@ def _add_remaining_categories(grouped_counters, shown_categories, msg_lines, ful
                 msg_lines.append(c.generate_display(fully_unescape_func, DISPLAY_MODE))
                 if c.comment:
                     msg_lines.append(f"-# {fully_unescape_func(c.comment)}")
+
+def update_counter_category(character_id: str, counter_name: str, new_category: str):
+    try:
+        counter_name = sanitize_and_validate("counter", counter_name, MAX_FIELD_LENGTH)
+        new_category = sanitize_and_validate("category", new_category, MAX_FIELD_LENGTH)
+    except ValueError as ve:
+        return False, str(ve)
+
+    char_doc = _get_character_by_id(character_id)
+    if not char_doc:
+        return False, "Character not found."
+
+    counters = char_doc.get("counters", [])
+    for c in counters:
+        if c["counter"] == counter_name:
+            c["category"] = new_category
+            characters_collection.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": counters}})
+            return True, None
+
+    return False, "Counter not found."

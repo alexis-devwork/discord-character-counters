@@ -45,34 +45,33 @@ def register_edit_commands(cog):
             return False
         return True
 
-    def _get_counter_by_name(counters, counter_name):
-        """Get a counter by its name from a list of counters."""
-        return next((c for c in counters if c.counter == counter_name), None)
-
     def _update_temp_value(target, value, interaction):
         """Update the temp value with appropriate validations."""
+        if value < 0:
+            interaction.response.send_message("Cannot set temp below zero.", ephemeral=True)
+            return None, False
         if target.counter_type in ["perm_is_maximum", "perm_is_maximum_bedlam"]:
             if value > target.perm:
                 return target.perm, True
-            elif value < 0:
-                interaction.response.send_message("Cannot set temp below zero.", ephemeral=True)
-                return None, False
             else:
                 return value, True
         else:
-            if value < 0:
-                interaction.response.send_message("Cannot set temp below zero.", ephemeral=True)
-                return None, False
             return value, True
 
     def _update_perm_value(target, value):
         """Update the perm value and adjust temp if necessary."""
+        if value < 0:
+            raise ValueError("Cannot set perm below zero.")
         target.perm = value
         # For perm_is_maximum types, adjust temp if perm is lowered below temp
         if target.counter_type in ["perm_is_maximum", "perm_is_maximum_bedlam"]:
             if target.temp > target.perm:
                 target.temp = target.perm
         return target
+
+    def _get_counter_by_name(counters, counter_name):
+        """Get a counter by its name from a list of counters."""
+        return next((c for c in counters if c.counter == counter_name), None)
 
     def _update_counter_in_mongodb(character_id, counter, target):
         """Update a counter in MongoDB."""
