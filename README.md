@@ -204,3 +204,35 @@ All commands that take a character, counter, category, or splat use Discord drop
 This project is open source. Please keep credits and a link to this repository in all files containing code from this project.
 
 ---
+
+## Testing
+
+This project includes a comprehensive test suite covering character management, counter operations, health tracking, and Discord commands.
+
+### Setup for Testing
+
+1. **Install test dependencies**  
+   `pip install -r requirements-dev.txt`
+
+2. **Run the tests**  
+   ```
+   pytest
+   ```
+
+3. **Run tests with coverage**  
+   ```
+   pytest --cov=.
+   ```
+
+### Test Structure
+
+- `tests/test_character_management.py` - Tests for character CRUD operations
+- `tests/test_counter_management.py` - Tests for counter operations
+- `tests/test_health_system.py` - Tests for health tracking and damage system
+- `tests/test_commands.py` - Tests for Discord commands
+
+### Mock Objects
+
+The test suite includes mock objects for Discord interactions, allowing tests to run without an actual Discord connection.
+
+---
