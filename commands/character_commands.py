@@ -3,84 +3,128 @@ from utils import (
     sanitize_string,
     get_all_user_characters_for_user,
     get_character_id_by_user_and_name,
-    character_name_autocomplete,
     get_counters_for_character,
     fully_unescape,
-    generate_counters_output
+    generate_counters_output,
+    handle_character_not_found,
+    handle_counter_not_found,
+    update_counter_in_db,  # Add import
 )
-from utils import characters_collection
-from health import Health
+from utils import characters_collection, CharacterRepository
+from health import Health, HealthTypeEnum
 from bson import ObjectId
-from .autocomplete import counter_name_autocomplete_for_character, bedlam_counter_autocomplete
+from .autocomplete import (
+    character_name_autocomplete,
+    counter_name_autocomplete_for_character,
+    bedlam_counter_autocomplete
+)
+from avct_cog import register_command
+from counter import CounterTypeEnum
 
+@register_command("character_group")
 def register_character_commands(cog):
     # Helper functions
-    async def _handle_character_not_found(interaction):
-        """Handle the case when a character is not found."""
-        await interaction.response.send_message("Character not found for this user.", ephemeral=True)
-        return False
-
-    async def _handle_counter_not_found(interaction):
-        """Handle the case when a counter is not found."""
-        await interaction.response.send_message("Counter not found.", ephemeral=True)
-        return False
-
     def _get_counter_by_name(counters, counter_name):
         """Get a counter by its name from a list of counters."""
         return next((c for c in counters if c.counter == counter_name), None)
 
     def _get_bedlam_counter(counters, counter_name):
         """Get a bedlam counter by its name from a list of counters."""
-        return next((c for c in counters if c.counter == counter_name and c.counter_type == "perm_is_maximum_bedlam"), None)
+        return next((c for c in counters if c.counter == counter_name and c.counter_type == CounterTypeEnum.perm_is_maximum_bedlam.value), None)
 
-    def _validate_new_temp_value(target, new_value, interaction):
+    async def _validate_new_temp_value(target, new_value, interaction):
         """Validate and adjust a new temp value based on counter type."""
-        if target.counter_type in ["perm_is_maximum", "perm_is_maximum_bedlam"]:
+        if target.counter_type in [CounterTypeEnum.perm_is_maximum.value, CounterTypeEnum.perm_is_maximum_bedlam.value]:
             if new_value > target.perm:
                 return target.perm, True
             elif new_value < 0:
-                interaction.response.send_message("Cannot set temp below zero.", ephemeral=True)
+                await interaction.response.send_message("Cannot set temp below zero.", ephemeral=True)
                 return None, False
             else:
                 return new_value, True
         else:
             if new_value < 0:
-                interaction.response.send_message("Cannot set temp below zero.", ephemeral=True)
+                await interaction.response.send_message("Cannot set temp below zero.", ephemeral=True)
                 return None, False
             return new_value, True
 
-    def _validate_new_perm_value(target, new_value, interaction):
+    async def _validate_new_perm_value(target, new_value, interaction):
         """Validate a new perm value."""
         if new_value < 0:
-            interaction.response.send_message("Cannot set perm below zero.", ephemeral=True)
+            await interaction.response.send_message("Cannot set perm below zero.", ephemeral=True)
             return None, False
         return new_value, True
 
-    def _validate_new_bedlam_value(target, new_value, interaction):
+    async def _validate_new_bedlam_value(target, new_value, interaction):
         """Validate a new bedlam value."""
         if new_value < 0:
-            interaction.response.send_message("Bedlam cannot be negative.", ephemeral=True)
+            await interaction.response.send_message("Bedlam cannot be negative.", ephemeral=True)
             return None, False
         if new_value > target.perm:
-            interaction.response.send_message(f"Bedlam cannot exceed perm ({target.perm}).", ephemeral=True)
+            await interaction.response.send_message(f"Bedlam cannot exceed perm ({target.perm}).", ephemeral=True)
             return None, False
         return new_value, True
 
     def _update_counter_in_mongodb(character_id, counter_name, field, value, target=None):
-        """Update a counter field in MongoDB."""
-        char_doc = characters_collection.find_one({"_id": ObjectId(character_id)})
-        counters_list = char_doc.get("counters", [])
+        # Deprecated: use update_counter_in_db from utils
+        return update_counter_in_db(character_id, counter_name, field, value, target)
 
-        for c in counters_list:
-            if c["counter"] == counter_name:
-                c[field] = value
-                # If we're updating perm, we might need to adjust temp too
-                if field == "perm" and target and target.counter_type in ["perm_is_maximum", "perm_is_maximum_bedlam"]:
-                    if target.temp > target.perm:
-                        c["temp"] = target.temp = target.perm
+    def _build_health_output(health_entries):
+        msg = "\n\n**Health Trackers:**"
+        # Get normal health
+        normal_health = next((h for h in health_entries if h.get("health_type") == HealthTypeEnum.normal.value), None)
+        if normal_health:
+            health_obj = Health(
+                health_type=normal_health.get("health_type"),
+                damage=normal_health.get("damage", []),
+                health_levels=normal_health.get("health_levels", None)
+            )
+            msg += f"\n{health_obj.display(health_entries)}"
+        # Display other health types
+        for h in health_entries:
+            if h.get("health_type") != HealthTypeEnum.normal.value and h.get("health_type") != HealthTypeEnum.chimerical.value:
+                health_obj = Health(
+                    health_type=h.get("health_type"),
+                    damage=h.get("damage", []),
+                    health_levels=h.get("health_levels", None)
+                )
+                msg += f"\nHealth ({health_obj.health_type}):\n{health_obj.display()}"
+        return msg
 
-        characters_collection.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": counters_list}})
-        return get_counters_for_character(character_id)
+    async def _send_counter_response(interaction, character, msg, public=False):
+        await interaction.response.send_message(
+            f"Counters for character '{character}':\n{msg}",
+            ephemeral=not public
+        )
+
+    async def _handle_counter_update(interaction, character, counter, target, field, value, update_func, public=False):
+        # Validate new value
+        if field == "temp":
+            adjusted_value, is_valid = await _validate_new_temp_value(target, value, interaction)
+            if not is_valid:
+                return
+            target.temp = adjusted_value
+        elif field == "perm":
+            adjusted_value, is_valid = await _validate_new_perm_value(target, value, interaction)
+            if not is_valid:
+                return
+            target.perm = adjusted_value
+            if target.counter_type in [CounterTypeEnum.perm_is_maximum.value, CounterTypeEnum.perm_is_maximum_bedlam.value]:
+                if target.temp > target.perm:
+                    target.temp = target.perm
+        elif field == "bedlam":
+            adjusted_value, is_valid = await _validate_new_bedlam_value(target, value, interaction)
+            if not is_valid:
+                return
+            target.bedlam = adjusted_value
+
+        # Update in MongoDB
+        updated_counters = update_func()
+        msg = generate_counters_output(updated_counters, fully_unescape)
+        await interaction.response.send_message(
+            f"{field.capitalize()} for counter '{counter}' on character '{character}' set to {value}.\n"
+            f"Counters for character '{character}':\n{msg}", ephemeral=True
+        )
 
     # Add show command directly to avct_group
     @cog.avct_group.command(name="show", description="Show all counters and health for a character")
@@ -91,60 +135,28 @@ def register_character_commands(cog):
         public: bool = False  # Optional boolean flag to make response visible to everyone
     ):
         user_id = str(interaction.user.id)
-        character = sanitize_string(character)
         character_id = get_character_id_by_user_and_name(user_id, character)
 
         if character_id is None:
-            await interaction.response.send_message(
-                "Character not found for this user. Please select a character from the dropdown/autocomplete.",
-                ephemeral=True  # Always keep error messages ephemeral
-            )
+            await handle_character_not_found(interaction)
             return
 
         counters = get_counters_for_character(character_id)
         if not counters:
-            await interaction.response.send_message("No counters found for this character.", ephemeral=True)
+            await handle_counter_not_found(interaction)
             return
 
         # Generate counters output
         msg = generate_counters_output(counters, fully_unescape)
 
         # Add health trackers to the bottom of the output
-        char_doc = characters_collection.find_one({"_id": ObjectId(character_id)})
+        char_doc = CharacterRepository.find_one({"_id": ObjectId(character_id)})
         health_entries = char_doc.get("health", []) if char_doc else []
         if health_entries:
-            msg += "\n\n**Health Trackers:**"
-
-            # Get normal health, simplified to get the first one where type is "normal"
-            normal_health = None
-            for h in health_entries:
-                if h.get("health_type") == "normal":
-                    normal_health = h
-                    break
-
-            if normal_health:
-                health_obj = Health(
-                    health_type=normal_health.get("health_type"),
-                    damage=normal_health.get("damage", []),
-                    health_levels=normal_health.get("health_levels", None)
-                )
-                msg += f"\n{health_obj.display(health_entries)}"
-
-            # Display any other health types that aren't normal or chimerical
-            for h in health_entries:
-                if h.get("health_type") != "normal" and h.get("health_type") != "chimerical":
-                    health_obj = Health(
-                        health_type=h.get("health_type"),
-                        damage=h.get("damage", []),
-                        health_levels=h.get("health_levels", None)
-                    )
-                    msg += f"\nHealth ({health_obj.health_type}):\n{health_obj.display()}"
+            msg += _build_health_output(health_entries)
 
         # Set ephemeral based on the public flag (ephemeral=True when public=False)
-        await interaction.response.send_message(
-            f"Counters for character '{character}':\n{msg}",
-            ephemeral=not public  # Make visible to everyone if public=True
-        )
+        await _send_counter_response(interaction, character, msg, public)
 
     # Other character commands moved to configav_group's character_group
     @cog.character_group.command(name="list", description="List your characters")
@@ -160,118 +172,53 @@ def register_character_commands(cog):
     @cog.character_group.command(name="temp", description="Set temp value for a counter")
     @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)
     async def temp(interaction: discord.Interaction, character: str, counter: str, new_value: int):
-        character = sanitize_string(character)
-        counter = sanitize_string(counter)
         user_id = str(interaction.user.id)
-
-        # Get character
         character_id = get_character_id_by_user_and_name(user_id, character)
         if character_id is None:
-            await _handle_character_not_found(interaction)
+            await handle_character_not_found(interaction)
             return
-
-        # Get counters
         counters = get_counters_for_character(character_id)
         target = _get_counter_by_name(counters, counter)
         if not target:
-            await _handle_counter_not_found(interaction)
+            await handle_counter_not_found(interaction)
             return
-
-        # Validate new value
-        adjusted_value, is_valid = _validate_new_temp_value(target, new_value, interaction)
-        if not is_valid:
-            return
-
-        # Set temp value
-        target.temp = adjusted_value
-
-        # Update in MongoDB
-        updated_counters = _update_counter_in_mongodb(character_id, counter, "temp", target.temp)
-
-        # Generate response
-        msg = generate_counters_output(updated_counters, fully_unescape)
-        await interaction.response.send_message(
-            f"Temp for counter '{counter}' on character '{character}' set to {adjusted_value}.\n"
-            f"Counters for character '{character}':\n{msg}", ephemeral=True)
+        await _handle_counter_update(
+            interaction, character, counter, target, "temp", new_value,
+            lambda: _update_counter_in_mongodb(character_id, counter, "temp", target.temp)
+        )
 
     @cog.character_group.command(name="perm", description="Set perm value for a counter")
     @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)
     async def perm(interaction: discord.Interaction, character: str, counter: str, new_value: int):
-        character = sanitize_string(character)
-        counter = sanitize_string(counter)
         user_id = str(interaction.user.id)
-
-        # Get character
         character_id = get_character_id_by_user_and_name(user_id, character)
         if character_id is None:
-            await _handle_character_not_found(interaction)
+            await handle_character_not_found(interaction)
             return
-
-        # Get counters
         counters = get_counters_for_character(character_id)
         target = _get_counter_by_name(counters, counter)
         if not target:
-            await _handle_counter_not_found(interaction)
+            await handle_counter_not_found(interaction)
             return
-
-        # Validate new value
-        adjusted_value, is_valid = _validate_new_perm_value(target, new_value, interaction)
-        if not is_valid:
-            return
-
-        # Set perm value
-        target.perm = adjusted_value
-
-        # For perm_is_maximum types, adjust temp if perm is lowered below temp
-        if target.counter_type in ["perm_is_maximum", "perm_is_maximum_bedlam"]:
-            if target.temp > target.perm:
-                target.temp = target.perm
-
-        # Update in MongoDB
-        updated_counters = _update_counter_in_mongodb(character_id, counter, "perm", target.perm, target)
-
-        # Generate response
-        msg = generate_counters_output(updated_counters, fully_unescape)
-        await interaction.response.send_message(
-            f"Perm for counter '{counter}' on character '{character}' set to {adjusted_value}.\n"
-            f"Counters for character '{character}':\n{msg}", ephemeral=True)
+        await _handle_counter_update(
+            interaction, character, counter, target, "perm", new_value,
+            lambda: _update_counter_in_mongodb(character_id, counter, "perm", target.perm, target)
+        )
 
     @cog.character_group.command(name="bedlam", description="Set bedlam for a counter (only perm_is_maximum_bedlam counters)")
     @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=bedlam_counter_autocomplete)
     async def bedlam(interaction: discord.Interaction, character: str, counter: str, new_value: int):
-        character = sanitize_string(character)
-        counter = sanitize_string(counter)
         user_id = str(interaction.user.id)
-
-        # Get character
         character_id = get_character_id_by_user_and_name(user_id, character)
         if character_id is None:
-            await _handle_character_not_found(interaction)
+            await handle_character_not_found(interaction)
             return
-
-        # Get counters
         counters = get_counters_for_character(character_id)
         target = _get_bedlam_counter(counters, counter)
         if not target:
-            await interaction.response.send_message(
-                "Counter not found or not of type perm_is_maximum_bedlam.",
-                ephemeral=True
-            )
+            await handle_counter_not_found(interaction)
             return
-
-        # Validate new value
-        adjusted_value, is_valid = _validate_new_bedlam_value(target, new_value, interaction)
-        if not is_valid:
-            return
-
-        # Set bedlam value
-        target.bedlam = adjusted_value
-
-        # Update in MongoDB
-        updated_counters = _update_counter_in_mongodb(character_id, counter, "bedlam", target.bedlam)
-
-        # Generate response
-        msg = generate_counters_output(updated_counters, fully_unescape)
-        await interaction.response.send_message(
-            f"Bedlam for counter '{counter}' on character '{character}' set to {adjusted_value}.\n"
-            f"Counters for character '{character}':\n{msg}", ephemeral=True)
+        await _handle_counter_update(
+            interaction, character, counter, target, "bedlam", new_value,
+            lambda: _update_counter_in_mongodb(character_id, counter, "bedlam", target.bedlam)
+        )

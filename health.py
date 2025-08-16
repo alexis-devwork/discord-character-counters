@@ -29,6 +29,14 @@ class Health:
         else:
             self.health_levels = health_levels
 
+    @classmethod
+    def from_dict(cls, d):
+        return cls(
+            health_type=d.get("health_type"),
+            damage=d.get("damage", []),
+            health_levels=d.get("health_levels", None)
+        )
+
     def set_health_levels(self, levels):
         self.health_levels = [hl for hl in levels]
 
@@ -109,30 +117,23 @@ class Health:
     def display(self, all_health_entries=None):
         """
         Display this health tracker, pairing with chimerical health if available.
-
-        Args:
-            all_health_entries: Optional list of all health entries for the character
-                                to find paired health trackers
-
-        Returns:
-            str: Formatted health display
         """
-        # Only look for paired health if this is normal health
         if self.health_type == "normal" and all_health_entries:
-            # Find chimerical health if it exists
             chimerical_health = next((h for h in all_health_entries if h.get("health_type") == "chimerical"), None)
-
-            # If found, use the combined display
             if chimerical_health:
                 chimerical_obj = Health(
                     health_type=chimerical_health.get("health_type"),
                     damage=chimerical_health.get("damage", []),
                     health_levels=chimerical_health.get("health_levels", None)
                 )
-                return display_health(self, chimerical_obj)
+                return self._display_paired(chimerical_obj)
+        return self._display_single()
 
-        # Otherwise just display this health tracker alone
+    def _display_single(self):
         return display_health(self)
+
+    def _display_paired(self, chimerical_obj):
+        return display_health(self, chimerical_obj)
 
 
 def display_health(normal_health, chimerical_health=None):

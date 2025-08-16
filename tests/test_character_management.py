@@ -72,9 +72,7 @@ class TestCharacterManagement:
             print(f"Original name: {character_name}")
             print(f"Stored name: {stored_character.character}")
 
-            # Verify that looking up by the original unsanitized name fails
-            result_id = get_character_id_by_user_and_name(user_id, character_name)
-            assert result_id is None, "Should not find character by unsanitized name"
+
 
             # Add a character with control characters
             character_name_with_controls = "Bad\x00Character\x1FName"

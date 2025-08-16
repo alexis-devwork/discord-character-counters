@@ -8,6 +8,16 @@ class UserCharacter:
         self.health = health if health is not None else []
         self.id = id
 
+    @classmethod
+    def from_dict(cls, d):
+        return cls(
+            user=d.get("user"),
+            character=d.get("character"),
+            counters=[Counter.from_dict(c) for c in d.get("counters", [])],
+            health=d.get("health", []),
+            id=str(d.get("_id")) if d.get("_id") else None
+        )
+
 class CounterTypeEnum(enum.Enum):
     single_number = "single_number"
     perm_is_maximum = "perm_is_maximum"
@@ -69,19 +79,34 @@ class Counter:
         self.bedlam = bedlam
         self.counter_type = counter_type
 
+    @classmethod
+    def from_dict(cls, d):
+        return cls(
+            counter=d.get("counter"),
+            temp=d.get("temp", 0),
+            perm=d.get("perm", 0),
+            category=d.get("category", "general"),
+            comment=d.get("comment", ""),
+            bedlam=d.get("bedlam", 0),
+            counter_type=d.get("counter_type", "single_number")
+        )
+
     def generate_display(self, fully_unescape_func, display_pretty):
         if display_pretty:
             return self.generate_display_pretty(fully_unescape_func)
         return self.generate_display_basic(fully_unescape_func)
 
     def generate_display_basic(self, fully_unescape_func):
-        base = f"{fully_unescape_func(self.counter)}: {self.temp}/{self.perm}"
+        base = f"{fully_unescape_func(self.counter)}:\n{self.temp}/{self.perm}"
         if self.counter_type == CounterTypeEnum.perm_is_maximum_bedlam.value:
             if not self.bedlam:
                 self.bedlam = 0
             spent_pts = self.perm - self.temp
             unspent_bedlam = self.bedlam - spent_pts if spent_pts < self.bedlam else 0
-            return f"{base} (bedlam: {unspent_bedlam}/{self.bedlam})"
+            base = f"{base} (bedlam: {unspent_bedlam}/{self.bedlam})"
+        # Add comment if present
+        if self.comment:
+            base = f"{base}\n-# {self.comment}"
         return base
 
     def generate_display_pretty(self, fully_unescape_func):
@@ -94,16 +119,14 @@ class Counter:
         # Get the unescaped counter name for display
         counter_name = fully_unescape_func(self.counter)
 
-        # Only handle counters with perm <= 10
-        if self.perm > 10:
-            return self.generate_display(fully_unescape_func)
-
+        # Only handle counters with perm <= 15
+        if self.perm > 15:
+            pretty = self.generate_display_basic(fully_unescape_func)
         # Handle perm_not_maximum type counters
-        if self.counter_type == CounterTypeEnum.perm_not_maximum.value:
+        elif self.counter_type == CounterTypeEnum.perm_not_maximum.value:
             stop_buttons = " ".join([":stop_button:"] * self.perm)
             negative_marks = " ".join([":asterisk:"] * self.temp)
-            return f"{counter_name}\n{stop_buttons}\n{negative_marks}"
-
+            pretty = f"{counter_name}\n{stop_buttons}\n{negative_marks}"
         # Handle perm_is_maximum type counters
         elif self.counter_type == CounterTypeEnum.perm_is_maximum.value:
             # Calculate filled and unfilled squares
@@ -114,8 +137,7 @@ class Counter:
             unfilled_squares = " ".join([":stop_button:"] * unfilled)
 
             squares = f"{filled_squares}{' ' if filled > 0 and unfilled > 0 else ''}{unfilled_squares}"
-            return f"{counter_name}\n{squares}"
-
+            pretty = f"{counter_name}\n{squares}"
         # Handle perm_is_maximum_bedlam type counters
         elif self.counter_type == CounterTypeEnum.perm_is_maximum_bedlam.value:
             # Ensure bedlam value is valid
@@ -141,11 +163,14 @@ class Counter:
                 else:  # spent and bedlam
                     squares.append(":red_square:")
 
-            return f"{counter_name}\n{' '.join(squares)}"
-
+            pretty = f"{counter_name}\n{' '.join(squares)}"
         # Default case for other counter types
         else:
-            return self.generate_display(fully_unescape_func)
+            pretty = self.generate_display(fully_unescape_func, False)
+        # Add comment if present
+        if self.comment:
+            pretty = f"{pretty}\n-# {self.comment}"
+        return pretty
 
 class CounterFactory:
     @staticmethod
