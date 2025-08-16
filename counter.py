@@ -174,6 +174,13 @@ class Counter:
 
 class CounterFactory:
     @staticmethod
+    def from_dict(data):
+        """
+        Create a Counter object from a dictionary.
+        """
+        return Counter.from_dict(data)
+
+    @staticmethod
     def create(counter_type, perm, comment=None, override_name=None):
         # Ensure counter_type is a PredefinedCounterEnum
         if not isinstance(counter_type, PredefinedCounterEnum):

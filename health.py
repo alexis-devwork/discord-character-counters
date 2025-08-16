@@ -9,6 +9,15 @@ class DamageEnum(enum.Enum):
     Aggravated = "Aggravated"
     Bashing = "Bashing"
 
+class HealthLevelEnum(enum.Enum):
+    Bruised = "Bruised"
+    Hurt = "Hurt"
+    Injured = "Injured"
+    Wounded = "Wounded"
+    Mauled = "Mauled"
+    Crippled = "Crippled"
+    Incapacitated = "Incapacitated"
+
 HEALTH_LEVELS = {
     "Bruised": 0,
     "Hurt": -1,
@@ -69,22 +78,21 @@ class Health:
         return to_add, levels - to_add
 
     def _upgrade_existing_damage(self, remaining: int, damage_type: DamageEnum):
-        """Upgrade existing damage based on new damage type."""
+        """Upgrade existing damage based on new damage type, starting from the top of the tracker."""
         converted = 0
-        
-        # Can only upgrade if incoming damage is more severe than existing
+
+        # Start from the top (beginning) of the tracker
         for i in range(len(self.damage)):
             if converted >= remaining:
                 break
-                
+
             if self.damage[i] == DamageEnum.Bashing.value:
                 if damage_type.value == DamageEnum.Bashing.value:
                     self.damage[i] = DamageEnum.Lethal.value
                 else:
                     self.damage[i] = damage_type.value
                 converted += 1
-        
-        # Return how much was converted and how much couldn't be applied
+
         not_taken = remaining - converted
         return converted, not_taken
 

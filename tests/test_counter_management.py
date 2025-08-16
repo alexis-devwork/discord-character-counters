@@ -185,40 +185,30 @@ class TestCounterManagement:
 
             # Add a counter with HTML in the name
             counter_name = "<script>alert('XSS')</script>Counter"
-            sanitized_name = "&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;Counter"
-
             success, error = add_counter(character_id, counter_name, 5, 10)
+            assert success is False
+            assert "alphanumeric characters and spaces" in error
 
-            # Verify counter was added with sanitized name
-            assert success is True  # Fix assertion
+            # Add a counter with control characters
+            counter_name_with_controls = "Bad\x00Counter\x1FName"
+            success, error = add_counter(character_id, counter_name_with_controls, 5, 10)
+            assert success is False
+            assert "alphanumeric characters and spaces" in error
+
+            # Add a counter with spaces (should succeed)
+            counter_name_with_spaces = "Good Counter Name"
+            success, error = add_counter(character_id, counter_name_with_spaces, 5, 10)
+            assert success is True
             assert error is None
 
-            # Get counters for the character
-            counters = get_counters_for_character(character_id)
-
-            # Check if counter exists with sanitized name
-            counter = next((c for c in counters if c.counter == sanitized_name), None)
-            assert counter is not None, "Counter with sanitized name not found"
-
-            # Verify that no counter with the unsanitized name exists
-            counter = next((c for c in counters if c.counter == counter_name), None)
-            assert counter is None, "Counter with unsanitized name should not exist"
-
-            # Add a counter with comment containing HTML
-            counter_name = "Comment Test"
+            # Add a counter with comment containing HTML (comment is allowed to be sanitized, so no change)
+            counter_name = "CommentTest"
             comment = "<b>Important</b> note with control chars\x00\x1F"
             sanitized_comment = "&lt;b&gt;Important&lt;/b&gt; note with control chars"
-
             success, error = add_counter(character_id, counter_name, 5, 10, CategoryEnum.general.value, comment)
-
-            # Verify counter was added with sanitized comment
-            assert success is True  # Fix assertion
+            assert success is True
             assert error is None
-
-            # Get counters for the character
             counters = get_counters_for_character(character_id)
-
-            # Check if counter exists with sanitized comment
             counter = next((c for c in counters if c.counter == counter_name), None)
             assert counter is not None
             assert counter.comment == sanitized_comment
@@ -271,35 +261,37 @@ class TestCounterManagement:
             character_id = get_character_id_by_user_and_name(user_id, character_name)
 
             # Add two counters
-            add_counter(character_id, "Counter One", 5, 10)
-            add_counter(character_id, "Counter Two", 3, 8)
+            add_counter(character_id, "CounterOne", 5, 10)
+            add_counter(character_id, "CounterTwo", 3, 8)
 
-            # Ensure both counters exist before renaming
-            counters = get_counters_for_character(character_id)
-            assert any(c.counter == "Counter One" for c in counters)
-            assert any(c.counter == "Counter Two" for c in counters)
-
-            # Try to rename "Counter One" to "Counter Two"
-            success, error = rename_counter(character_id, "Counter One", "Counter Two")
-
-            # Verify it fails due to duplicate name, not character not found
-            assert success is False  # Fix assertion
-            assert error is not None
+            # Try to rename "CounterOne" to "CounterTwo"
+            success, error = rename_counter(character_id, "CounterOne", "CounterTwo")
+            assert success is False
             assert "already exists" in error
 
-            # Try with sanitized name
-            success, error = rename_counter(str(character_id), "Counter One", "<i>Counter Three</i>")
+            # Try with non-alphanumeric name
+            non_alnum_name = "<i>CounterThree</i>"
+            success, error = rename_counter(str(character_id), "CounterOne", non_alnum_name)
+            assert success is False
+            assert "alphanumeric characters and spaces" in error
 
-            # Verify it succeeds with sanitized name
+            # Try renaming to a name with spaces (should succeed)
+            spaced_name = "Counter Three With Spaces"
+            success, error = rename_counter(str(character_id), "CounterOne", spaced_name)
             assert success is True
             assert error is None
 
-            # Get counters for the character
-            counters = get_counters_for_character(str(character_id))
+            # Try renaming to a name with only spaces (should fail)
+            only_spaces = "    "
+            success, error = rename_counter(str(character_id), "CounterOne", only_spaces)
+            assert success is False
+            assert "empty" in error.lower() or "invalid" in error.lower()
 
-            # Check if counter exists with sanitized name
-            counter = next((c for c in counters if c.counter == "&lt;i&gt;Counter Three&lt;/i&gt;"), None)
-            assert counter is not None, "Counter with sanitized name not found"
+            # Try renaming to a name with control characters (should fail)
+            control_name = "Bad\x00Name"
+            success, error = rename_counter(str(character_id), "CounterOne", control_name)
+            assert success is False
+            assert "alphanumeric characters and spaces" in error
 
     # Test updating counter category and comment after creation
     def test_update_counter_category_and_comment(self, test_characters_collection):

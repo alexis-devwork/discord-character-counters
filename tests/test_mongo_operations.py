@@ -5,20 +5,13 @@ import utils
 from counter import UserCharacter, Counter
 from health import Health, DamageEnum, HealthTypeEnum, HEALTH_LEVELS, display_health
 
-# Patch ObjectId globally for this test file
-from bson import ObjectId as RealObjectId
-def fake_objectid(oid=None):
-    # Always return a valid ObjectId string
-    return str(oid) if oid else "507f1f77bcf86cd799439011"
-
-ObjectId = fake_objectid
+from bson import ObjectId
 
 # Test MongoDB operations
 class TestMongoOperations(unittest.TestCase):
     def setUp(self):
-        # Patch utils to use our fake ObjectId
-        patcher = patch('utils.ObjectId', fake_objectid)
-        self.objectid_patch = patcher
+        # Patch ObjectId locally for this test class
+        self.objectid_patch = patch('bson.ObjectId', lambda oid=None: str(oid) if oid else "507f1f77bcf86cd799439011")
         self.objectid_patch.start()
 
         # Create mock collection
@@ -75,7 +68,7 @@ class TestMongoOperations(unittest.TestCase):
         self.assertEqual(len(characters[1].counters), 1)
 
     def test_add_counter(self):
-        valid_object_id = "507f1f77bcf86cd799439011"
+        valid_object_id = ObjectId("507f1f77bcf86cd799439011")
 
         # Ensure character_id is obtained via get_character_id_by_user_and_name
         character_id = utils.get_character_id_by_user_and_name("user123", "Test Character")
@@ -121,7 +114,7 @@ class TestMongoOperations(unittest.TestCase):
         assert("exists for this character" in error)
 
     def test_get_user_character_by_id(self):
-        valid_object_id = "123456789012345678901234"
+        valid_object_id = ObjectId("123456789012345678901234")
 
         # Configure mock
         char_doc = {
@@ -141,7 +134,7 @@ class TestMongoOperations(unittest.TestCase):
         self.assertEqual(character.character, "Test Character")
 
     def test_delete_user_character(self):
-        valid_object_id = "123456789012345678901234"
+        valid_object_id = ObjectId("123456789012345678901234")
 
         # Configure mock
         char_doc = {
@@ -168,7 +161,7 @@ class TestMongoOperations(unittest.TestCase):
         self.assertTrue("not found" in error)
 
     def test_add_health(self):
-        valid_object_id = "123456789012345678901234"
+        valid_object_id = ObjectId("123456789012345678901234")
 
         # Configure mock
         char_doc = {
@@ -204,7 +197,7 @@ class TestMongoOperations(unittest.TestCase):
         self.assertTrue("already exists" in error)
 
     def test_get_user_character_health(self):
-        valid_object_id = "123456789012345678901234"
+        valid_object_id = ObjectId("123456789012345678901234")
 
         # Configure mock
         char_doc = {
@@ -224,7 +217,7 @@ class TestMongoOperations(unittest.TestCase):
         self.assertEqual(health[0]["level"], 100)
 
     def test_delete_health(self):
-        valid_object_id = "123456789012345678901234"
+        valid_object_id = ObjectId("123456789012345678901234")
 
         # Configure mock
         char_doc = {

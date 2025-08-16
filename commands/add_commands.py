@@ -10,7 +10,7 @@ from utils import (
     CategoryEnum,
 )
 from utils import characters_collection, CharacterRepository
-from health import Health, HealthTypeEnum
+from health import Health, HealthTypeEnum, HEALTH_LEVELS, HealthLevelEnum
 from bson import ObjectId
 from .autocomplete import (
     character_name_autocomplete,
@@ -291,7 +291,7 @@ def register_add_commands(cog):
         counter_type: str,
         value: int = None,
         comment: str = None,
-        name_override: str = None  # Used for all override cases, required for project_roll and item_with_charges
+        name_override: str = None
     ):
         character = sanitize_string(character)
         user_id = str(interaction.user.id)
@@ -342,12 +342,17 @@ def register_add_commands(cog):
         return None
 
     # --- Add health command ---
-    @cog.add_group.command(name="health", description="Add a health tracker to a character")
-    @app_commands.autocomplete(character=character_name_autocomplete, health_type=health_type_autocomplete)
+    @cog.add_group.command(name="health", description="Add a health tracker or extra health level to a character")
+    @app_commands.autocomplete(
+        character=character_name_autocomplete,
+        health_type=health_type_autocomplete,
+        health_level_type=health_level_type_autocomplete
+    )
     async def add_health_cmd(
         interaction: discord.Interaction,
         character: str,
-        health_type: str
+        health_type: str,
+        health_level_type: str = None
     ):
         character = sanitize_string(character)
         user_id = str(interaction.user.id)
@@ -369,35 +374,59 @@ def register_add_commands(cog):
             await interaction.response.send_message("Character not found.", ephemeral=True)
             return
 
-        # Check if health tracker already exists
         health_list = char_doc.get("health", [])
-        if _health_tracker_exists(health_list, ht_enum.value):
-            await interaction.response.send_message(
-                f"A {health_type} health tracker already exists for this character.",
-                ephemeral=True
-            )
-            return
 
-        # Add health tracker
-        _add_health_tracker_to_list(health_list, ht_enum.value, character_id)
+        # If health tracker exists, add health level if requested
+        tracker_exists = any(h.get("health_type") == ht_enum.value for h in health_list)
+        if tracker_exists:
+            if health_level_type:
+                # Validate health level type
+                valid_levels = [e.value for e in HealthLevelEnum]
+                if health_level_type not in valid_levels:
+                    await interaction.response.send_message(
+                        f"Invalid health level type. Choose from: {', '.join(valid_levels)}.",
+                        ephemeral=True
+                    )
+                    return
+                # Add health level to existing tracker
+                from utils import add_health_level
+                success, error = add_health_level(character_id, ht_enum.value, health_level_type)
+                if success:
+                    await interaction.response.send_message(
+                        f"Added health level '{health_level_type}' to {health_type} health tracker for character '{character}'.",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(f"Failed to add health level: {error}", ephemeral=True)
+                return
+            else:
+                await interaction.response.send_message(
+                    f"A {health_type} health tracker already exists for this character.",
+                    ephemeral=True
+                )
+                return
 
-        # Send confirmation
-        await interaction.response.send_message(
-            f"Health tracker ({health_type}) added to character '{character}'.",
-            ephemeral=True
-        )
-
-    def _health_tracker_exists(health_list, health_type):
-        """Check if a health tracker of the given type already exists."""
-        return any(h.get("health_type") == health_type for h in health_list)
-
-    def _add_health_tracker_to_list(health_list, health_type, character_id):
-        """Add a health tracker to the health list and update the database."""
-        health_obj = Health(health_type=health_type)
+        # If tracker does not exist, add tracker (optionally with a specific health level)
+        if health_level_type:
+            valid_levels = [e.value for e in HealthLevelEnum]
+            if health_level_type not in valid_levels:
+                await interaction.response.send_message(
+                    f"Invalid health level type. Choose from: {', '.join(valid_levels)}.",
+                    ephemeral=True
+                )
+                return
+            health_obj = Health(health_type=ht_enum.value, health_levels=[health_level_type])
+        else:
+            health_obj = Health(health_type=ht_enum.value)
         health_list.append(health_obj.__dict__)
         CharacterRepository.update_one(
             {"_id": ObjectId(character_id)},
             {"$set": {"health": health_list}}
+        )
+
+        await interaction.response.send_message(
+            f"Health tracker ({health_type}) added to character '{character}'.",
+            ephemeral=True
         )
 
     # --- Add custom counter ---
@@ -434,3 +463,11 @@ def register_add_commands(cog):
                 f"Counter '{counter}' added to character '{character}'.", ephemeral=True)
         else:
             await interaction.response.send_message(error or "Failed to add counter.", ephemeral=True)
+
+async def health_level_type_autocomplete(interaction: discord.Interaction, current: str):
+    """Autocomplete health level types from HealthLevelEnum."""
+    return [
+        app_commands.Choice(name=e.value, value=e.value)
+        for e in HealthLevelEnum
+        if current.lower() in e.value.lower()
+    ]

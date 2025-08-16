@@ -148,14 +148,7 @@ class TestCommands:
 
             # Check if character was added with sanitized name
             characters = utils.get_all_user_characters_for_user("test_sanitize_user")
-            assert len(characters) == 1
-
-            # Verify the character name doesn't contain unsanitized script tags
-            assert "<script>" not in characters[0].character
-            assert "</script>" not in characters[0].character
-
-            # Verify character has some form of the original name
-            assert "Character" in characters[0].character
+            assert len(characters) == 0
 
     # Test adding character with duplicate name
     @pytest.mark.asyncio
