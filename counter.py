@@ -164,12 +164,11 @@ class Counter:
                     squares.append(":red_square:")
 
             pretty = f"{counter_name}\n{' '.join(squares)}"
+            if self.comment:
+                pretty = f"{pretty}\n-# {self.comment}"
         # Default case for other counter types
         else:
             pretty = self.generate_display(fully_unescape_func, False)
-        # Add comment if present
-        if self.comment:
-            pretty = f"{pretty}\n-# {self.comment}"
         return pretty
 
 class CounterFactory:

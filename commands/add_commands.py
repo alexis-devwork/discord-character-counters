@@ -345,13 +345,11 @@ def register_add_commands(cog):
     @cog.add_group.command(name="health", description="Add a health tracker or extra health level to a character")
     @app_commands.autocomplete(
         character=character_name_autocomplete,
-        health_type=health_type_autocomplete,
         health_level_type=health_level_type_autocomplete
     )
     async def add_health_cmd(
         interaction: discord.Interaction,
         character: str,
-        health_type: str,
         health_level_type: str = None
     ):
         character = sanitize_string(character)
@@ -359,13 +357,6 @@ def register_add_commands(cog):
         character_id = get_character_id_by_user_and_name(user_id, character)
         if character_id is None:
             await interaction.response.send_message("Character not found for this user.", ephemeral=True)
-            return
-
-        # Validate health type
-        try:
-            ht_enum = HealthTypeEnum(health_type)
-        except ValueError:
-            await interaction.response.send_message("Invalid health type.", ephemeral=True)
             return
 
         # Get character document
@@ -376,38 +367,8 @@ def register_add_commands(cog):
 
         health_list = char_doc.get("health", [])
 
-        # If health tracker exists, add health level if requested
-        tracker_exists = any(h.get("health_type") == ht_enum.value for h in health_list)
-        if tracker_exists:
-            if health_level_type:
-                # Validate health level type
-                valid_levels = [e.value for e in HealthLevelEnum]
-                if health_level_type not in valid_levels:
-                    await interaction.response.send_message(
-                        f"Invalid health level type. Choose from: {', '.join(valid_levels)}.",
-                        ephemeral=True
-                    )
-                    return
-                # Add health level to existing tracker
-                from utils import add_health_level
-                success, error = add_health_level(character_id, ht_enum.value, health_level_type)
-                if success:
-                    await interaction.response.send_message(
-                        f"Added health level '{health_level_type}' to {health_type} health tracker for character '{character}'.",
-                        ephemeral=True
-                    )
-                else:
-                    await interaction.response.send_message(f"Failed to add health level: {error}", ephemeral=True)
-                return
-            else:
-                await interaction.response.send_message(
-                    f"A {health_type} health tracker already exists for this character.",
-                    ephemeral=True
-                )
-                return
-
-        # If tracker does not exist, add tracker (optionally with a specific health level)
-        if health_level_type:
+        # If health trackers exist, add health level to all if requested
+        if health_list and health_level_type:
             valid_levels = [e.value for e in HealthLevelEnum]
             if health_level_type not in valid_levels:
                 await interaction.response.send_message(
@@ -415,9 +376,51 @@ def register_add_commands(cog):
                     ephemeral=True
                 )
                 return
-            health_obj = Health(health_type=ht_enum.value, health_levels=[health_level_type])
+            from utils import add_health_level
+            updated = False
+            for tracker in health_list:
+                success, error = add_health_level(character_id, tracker.get("health_type"), health_level_type)
+                if success:
+                    levels = tracker.get("health_levels", [])
+                    levels.append(health_level_type)
+                    enum_order = [e.value for e in HealthLevelEnum]
+                    tracker["health_levels"] = sorted(
+                        levels,
+                        key=lambda x: enum_order.index(x) if x in enum_order else len(enum_order)
+                    )
+                    updated = True
+                else:
+                    await interaction.response.send_message(f"Failed to add health level to {tracker.get('health_type')}: {error}", ephemeral=True)
+                    return
+            if updated:
+                CharacterRepository.update_one(
+                    {"_id": ObjectId(character_id)},
+                    {"$set": {"health": health_list}}
+                )
+                await interaction.response.send_message(
+                    f"Added health level '{health_level_type}' to all health trackers for character '{character}'.",
+                    ephemeral=True
+                )
+            return
+        elif health_list:
+            await interaction.response.send_message(
+                f"Health tracker(s) already exist for this character.",
+                ephemeral=True
+            )
+            return
+
+        # If no tracker exists, add tracker (optionally with a specific health level)
+        valid_levels = [e.value for e in HealthLevelEnum]
+        if health_level_type:
+            if health_level_type not in valid_levels:
+                await interaction.response.send_message(
+                    f"Invalid health level type. Choose from: {', '.join(valid_levels)}.",
+                    ephemeral=True
+                )
+                return
+            health_obj = Health(health_type=HealthTypeEnum.normal.value, health_levels=[health_level_type])
         else:
-            health_obj = Health(health_type=ht_enum.value)
+            health_obj = Health(health_type=HealthTypeEnum.normal.value)
         health_list.append(health_obj.__dict__)
         CharacterRepository.update_one(
             {"_id": ObjectId(character_id)},
@@ -425,7 +428,7 @@ def register_add_commands(cog):
         )
 
         await interaction.response.send_message(
-            f"Health tracker ({health_type}) added to character '{character}'.",
+            f"Health tracker added to character '{character}'.",
             ephemeral=True
         )
 

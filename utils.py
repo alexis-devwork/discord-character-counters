@@ -652,9 +652,10 @@ def add_predefined_counter(character_id: str, counter_type: str, value: int = No
 
     counters = char_doc.get("counters", [])
 
-    # Sanitize counter_name before checking for duplicates
-    sanitized_name = sanitize_string(counter_name)
-    if any(sanitize_string(c["counter"]).lower() == sanitized_name.lower() for c in counters):
+    # --- FIX: Check for duplicate counter name (case-insensitive, sanitized) ---
+    # Always check against the actual name used in the counter object (counter_obj.counter)
+    sanitized_new_name = sanitize_string(counter_obj.counter)
+    if any(sanitize_string(c["counter"]).lower() == sanitized_new_name.lower() for c in counters):
         return False, "A counter with that name exists for this character."
 
     # Check counter limit
