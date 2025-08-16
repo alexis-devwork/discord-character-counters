@@ -262,13 +262,31 @@ def register_edit_commands(cog):
         health_entries = char_doc.get("health", []) if char_doc else []
         if health_entries:
             msg += "\n\n**Health Trackers:**"
+
+            # Get normal health, simplified to get the first one where type is "normal"
+            normal_health = None
             for h in health_entries:
+                if h.get("health_type") == "normal":
+                    normal_health = h
+                    break
+
+            if normal_health:
                 health_obj = Health(
-                    health_type=h.get("health_type"),
-                    damage=h.get("damage", []),
-                    health_levels=h.get("health_levels", None)
+                    health_type=normal_health.get("health_type"),
+                    damage=normal_health.get("damage", []),
+                    health_levels=normal_health.get("health_levels", None)
                 )
-                msg += f"\nHealth ({health_obj.health_type}):\n{health_obj.display()}"
+                msg += f"\n{health_obj.display(health_entries)}"
+
+            # Display any other health types that aren't normal or chimerical
+            for h in health_entries:
+                if h.get("health_type") != "normal" and h.get("health_type") != "chimerical":
+                    health_obj = Health(
+                        health_type=h.get("health_type"),
+                        damage=h.get("damage", []),
+                        health_levels=h.get("health_levels", None)
+                    )
+                    msg += f"\nHealth ({health_obj.health_type}):\n{health_obj.display()}"
 
         return msg
 
