@@ -410,59 +410,64 @@ class TestCounterManagement:
         c = Counter("Test", 5, 5, "general", bedlam=5, counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value)
         assert c.temp == 5 and c.bedlam == 5
 
+    # Test updating a perm_is_maximum_bedlam counter
+    def test_update_perm_is_maximum_bedlam_counter(self, test_characters_collection):
+        from counter import CounterTypeEnum
+        with patch('utils.characters_collection', test_characters_collection):
+            user_id = "test_user_bedlam"
+            character_name = "Bedlam Character"
+            add_user_character(user_id, character_name)
+            character_id = get_character_id_by_user_and_name(user_id, character_name)
+            # Add perm_is_maximum_bedlam counter
+            add_counter(character_id, "BedlamCounter", 2, 5, counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value)
+            # Update temp above perm (should cap at perm)
+            success, error = update_counter(character_id, "BedlamCounter", "temp", 10)
+            assert success is True
+            counters = get_counters_for_character(character_id)
+            counter = next((c for c in counters if c.counter == "BedlamCounter"), None)
+            assert counter.temp == counter.perm
+            # Update temp below zero (should fail)
+            success, error = update_counter(character_id, "BedlamCounter", "temp", -20)
+            assert not success
+            assert "below zero" in error
+
+    # Test updating bedlam above perm for perm_is_maximum_bedlam
+    def test_update_bedlam_above_perm_for_perm_is_maximum_bedlam(self, test_characters_collection):
+        from counter import CounterTypeEnum
+        with patch('utils.characters_collection', test_characters_collection):
+            user_id = "test_user_bedlam2"
+            character_name = "Bedlam Character 2"
+            add_user_character(user_id, character_name)
+            character_id = get_character_id_by_user_and_name(user_id, character_name)
+            add_counter(character_id, "BedlamCounter2", 2, 5, counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value)
+            # Directly manipulate bedlam and check initialization
+            from counter import Counter
+            # Should raise ValueError if bedlam > perm
+            with pytest.raises(ValueError):
+                Counter("BedlamCounter2", 2, 5, "general", bedlam=6, counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value)
+
     # Test other counter types can have temp above perm
-    def test_other_counter_types_can_have_temp_above_perm(self):
-        c = Counter("Test", 10, 5, "general", counter_type=CounterTypeEnum.single_number.value)
-        assert c.temp == 10 and c.perm == 5
+    def test_other_counter_types_temp_above_perm(self, test_characters_collection):
+        from counter import CounterTypeEnum
+        with patch('utils.characters_collection', test_characters_collection):
+            user_id = "test_user_other_type"
+            character_name = "OtherType Character"
+            add_user_character(user_id, character_name)
+            character_id = get_character_id_by_user_and_name(user_id, character_name)
+            # Add single_number counter
+            add_counter(character_id, "OtherCounter", 2, 5, counter_type=CounterTypeEnum.single_number.value)
+            # Update temp above perm
+            update_counter(character_id, "OtherCounter", "temp", 10)
+            counters = get_counters_for_character(character_id)
+            counter = next((c for c in counters if c.counter == "OtherCounter"), None)
+            assert counter.temp == 12  # 2 + 10
 
-    # Test updating temp perm_is_maximum_bedlam
-    def test_update_temp_perm_is_maximum_bedlam(self, test_characters_collection):
-        # Setup
-        from utils import add_user_character, get_character_id_by_user_and_name, add_counter, update_counter
-        user_id = "u"
-        character = "c"
-        add_user_character(user_id, character)
-        character_id = get_character_id_by_user_and_name(user_id, character)
-        add_counter(character_id, "bedlamtest", 2, 5, counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value)
-        # Try to set temp above perm
-        success, error = update_counter(character_id, "bedlamtest", "temp", 10)
-        # Should cap at perm
-        from utils import get_counters_for_character
-        c = next(x for x in get_counters_for_character(character_id) if x.counter == "bedlamtest")
-        assert c.temp == c.perm
-        # Try to set temp below zero
-        success, error = update_counter(character_id, "bedlamtest", "temp", -10)
-        assert not success and "below zero" in error
-
-    # Test updating temp other types can exceed perm
-    def test_update_temp_other_types_can_exceed_perm(self, test_characters_collection):
-        from utils import add_user_character, get_character_id_by_user_and_name, add_counter, update_counter, get_counters_for_character
-        user_id = "u"
-        character = "c2"
-        add_user_character(user_id, character)
-        character_id = get_character_id_by_user_and_name(user_id, character)
-        add_counter(character_id, "othertest", 2, 5, counter_type=CounterTypeEnum.single_number.value)
-        # Set temp above perm
-        update_counter(character_id, "othertest", "temp", 10)
-        c = next(x for x in get_counters_for_character(character_id) if x.counter == "othertest")
-        assert c.temp == 12  # 2 + 10
-
-    # Test updating bedlam perm_is_maximum_bedlam
-    def test_update_bedlam_perm_is_maximum_bedlam(self, test_characters_collection):
-        from utils import add_user_character, get_character_id_by_user_and_name, add_counter, get_counters_for_character
-        user_id = "u"
-        character = "c3"
-        add_user_character(user_id, character)
-        character_id = get_character_id_by_user_and_name(user_id, character)
-        add_counter(character_id, "bedlamtest2", 2, 5, counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value)
-        # Simulate bedlam update (direct dict manipulation for test)
-        counters = get_counters_for_character(character_id)
-        c = next(x for x in counters if x.counter == "bedlamtest2")
-        # Try to set bedlam above perm
-        c.bedlam = 6
-        try:
-            Counter(c.counter, c.temp, c.perm, c.category, bedlam=c.bedlam, counter_type=c.counter_type)
-            assert False, "Should not allow bedlam > perm"
-        except ValueError:
-            pass
-
+    # Test initializing perm_is_maximum and perm_is_maximum_bedlam with temp > perm
+    def test_init_perm_is_maximum_and_bedlam_temp_above_perm(self):
+        from counter import Counter, CounterTypeEnum
+        # perm_is_maximum
+        with pytest.raises(ValueError):
+            Counter("MaxCounterInit", 6, 5, "general", counter_type=CounterTypeEnum.perm_is_maximum.value)
+        # perm_is_maximum_bedlam
+        with pytest.raises(ValueError):
+            Counter("BedlamCounterInit", 6, 5, "general", bedlam=2, counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value)

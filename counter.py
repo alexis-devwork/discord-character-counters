@@ -53,6 +53,14 @@ class Counter:
             raise ValueError("perm cannot be below zero")
         if bedlam is not None and bedlam < 0:
             raise ValueError("bedlam cannot be below zero")
+        # For perm_is_maximum and perm_is_maximum_bedlam, temp cannot exceed perm
+        if counter_type in ["perm_is_maximum", "perm_is_maximum_bedlam"]:
+            if temp is not None and perm is not None and temp > perm:
+                raise ValueError("temp cannot be greater than perm for this counter type")
+        # For perm_is_maximum_bedlam, bedlam cannot exceed perm
+        if counter_type == "perm_is_maximum_bedlam":
+            if bedlam is not None and perm is not None and bedlam > perm:
+                raise ValueError("bedlam cannot be greater than perm for this counter type")
         self.counter = counter
         self.temp = temp
         self.perm = perm
