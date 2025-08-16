@@ -12,6 +12,8 @@ from health import HealthTypeEnum
 from .autocomplete import counter_name_autocomplete_for_character, health_type_autocomplete
 
 def register_remove_commands(cog):
+    # All of these stay in the configav remove group which was already defined in avct_cog.py
+
     @cog.remove_group.command(name="character", description="Remove a character and all its counters")
     @discord.app_commands.autocomplete(character=character_name_autocomplete)
     async def remove_character_cmd(

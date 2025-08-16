@@ -54,7 +54,12 @@ class Counter:
         self.bedlam = bedlam
         self.counter_type = counter_type
 
-    def generate_display(self, fully_unescape_func):
+    def generate_display(self, fully_unescape_func, display_pretty):
+        if display_pretty:
+            return self.generate_display_pretty(fully_unescape_func)
+        return self.generate_display_basic(fully_unescape_func)
+
+    def generate_display_basic(self, fully_unescape_func):
         base = f"{fully_unescape_func(self.counter)}: {self.temp}/{self.perm}"
         if self.counter_type == CounterTypeEnum.perm_is_maximum_bedlam.value:
             if not self.bedlam:
@@ -63,6 +68,69 @@ class Counter:
             unspent_bedlam = self.bedlam - spent_pts if spent_pts < self.bedlam else 0
             return f"{base} (bedlam: {unspent_bedlam}/{self.bedlam})"
         return base
+
+    def generate_display_pretty(self, fully_unescape_func):
+        """
+        Generate a prettier display for counters with visual representations using emoji.
+
+        Returns:
+            str: A multi-line string with counter name and visual representation.
+        """
+        # Get the unescaped counter name for display
+        counter_name = fully_unescape_func(self.counter)
+
+        # Only handle counters with perm <= 10
+        if self.perm > 10:
+            return self.generate_display(fully_unescape_func)
+
+        # Handle perm_not_maximum type counters
+        if self.counter_type == CounterTypeEnum.perm_not_maximum.value:
+            stop_buttons = " ".join([":stop_button:"] * self.perm)
+            negative_marks = " ".join([":asterisk:"] * self.temp)
+            return f"{counter_name}\n{stop_buttons}\n{negative_marks}"
+
+        # Handle perm_is_maximum type counters
+        elif self.counter_type == CounterTypeEnum.perm_is_maximum.value:
+            # Calculate filled and unfilled squares
+            filled = min(self.temp, self.perm)  # Ensure we don't exceed perm
+            unfilled = self.perm - filled
+
+            filled_squares = " ".join([":asterisk:"] * filled)
+            unfilled_squares = " ".join([":stop_button:"] * unfilled)
+
+            squares = f"{filled_squares}{' ' if filled > 0 and unfilled > 0 else ''}{unfilled_squares}"
+            return f"{counter_name}\n{squares}"
+
+        # Handle perm_is_maximum_bedlam type counters
+        elif self.counter_type == CounterTypeEnum.perm_is_maximum_bedlam.value:
+            # Ensure bedlam value is valid
+            if not hasattr(self, 'bedlam') or self.bedlam is None:
+                self.bedlam = 0
+
+            # Create the list of dictionaries representing each square
+            status_list = []
+            for i in range(self.perm):
+                is_bedlam = i >= (self.perm - self.bedlam)
+                is_spent = i >= self.temp
+                status_list.append({"bedlam": is_bedlam, "spent": is_spent})
+
+            # Map the statuses to emoji
+            squares = []
+            for status in status_list:
+                if not status["spent"] and not status["bedlam"]:
+                    squares.append(":asterisk:")
+                elif status["spent"] and not status["bedlam"]:
+                    squares.append(":stop_button:")
+                elif not status["spent"] and status["bedlam"]:
+                    squares.append(":b:")
+                else:  # spent and bedlam
+                    squares.append(":red_square:")
+
+            return f"{counter_name}\n{' '.join(squares)}"
+
+        # Default case for other counter types
+        else:
+            return self.generate_display(fully_unescape_func)
 
 class CounterFactory:
     @staticmethod
@@ -265,4 +333,3 @@ class SplatEnum(enum.Enum):
     changeling = "changeling"
     vampire = "vampire"
     fera = "fera"
-

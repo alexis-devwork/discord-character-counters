@@ -16,30 +16,30 @@ class AvctCog(commands.Cog):
         self.bot = bot
 
         # Initialize command groups
-        self.avct_group = discord.app_commands.Group(name="avct", description="AVCT commands")
+        self.avct_group = discord.app_commands.Group(name="avct", description="AVCT essential commands")
+        self.configav_group = discord.app_commands.Group(name="configav", description="AVCT configuration commands")
+
+        # Define groups for configav
         self.add_group = app_commands.Group(name="add", description="Add a character or counter")
-        self.character_group = app_commands.Group(name="character", description="Character related commands")
         self.rename_group = app_commands.Group(name="rename", description="Rename a character or counter")
         self.remove_group = app_commands.Group(name="remove", description="Remove a character or counter")
         self.edit_group = app_commands.Group(name="edit", description="Edit or rename counter/category/comment")
-        self.spend_group = app_commands.Group(name="spend", description="Spend from a counter")
-        self.gain_group = app_commands.Group(name="gain", description="Gain to a counter")
+        self.character_group = app_commands.Group(name="character", description="Character related commands")
 
         # Register all commands
         self.register_commands()
 
     async def cog_load(self):
-        # Add all subgroups to main avct group
-        self.avct_group.add_command(self.character_group)
-        self.avct_group.add_command(self.add_group)
-        self.avct_group.add_command(self.rename_group)
-        self.avct_group.add_command(self.remove_group)
-        self.avct_group.add_command(self.edit_group)
-        self.avct_group.add_command(self.spend_group)
-        self.avct_group.add_command(self.gain_group)
+        # Add subgroups to configav group
+        self.configav_group.add_command(self.add_group)
+        self.configav_group.add_command(self.rename_group)
+        self.configav_group.add_command(self.remove_group)
+        self.configav_group.add_command(self.edit_group)
+        self.configav_group.add_command(self.character_group)
 
-        # Add main group to bot
+        # Add main groups to bot
         self.bot.tree.add_command(self.avct_group)
+        self.bot.tree.add_command(self.configav_group)
 
     def register_commands(self):
         # Register commands from each module

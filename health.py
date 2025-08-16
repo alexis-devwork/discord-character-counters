@@ -106,17 +106,75 @@ class Health:
             })
         return result
 
-    def display(self):
-        symbol_map = {
-            None: ":stop_button:",
-            DamageEnum.Bashing.value: ":regional_indicator_b:",
-            DamageEnum.Lethal.value: ":regional_indicator_l:",
-            DamageEnum.Aggravated.value: ":regional_indicator_a:"
-        }
-        lines = []
-        for entry in self.map_damage_to_health():
-            symbol = symbol_map.get(entry['damage_type'], "O")
-            penalty = entry['penalty']
-            penalty_str = f" ({penalty})" if penalty != 0 and penalty != -999 else ""
-            lines.append(f"{symbol} {entry['health_level']}{penalty_str}")
-        return "\n".join(lines)
+    def display(self, all_health_entries=None):
+        """
+        Display this health tracker, pairing with chimerical health if available.
+
+        Args:
+            all_health_entries: Optional list of all health entries for the character
+                                to find paired health trackers
+
+        Returns:
+            str: Formatted health display
+        """
+        # Only look for paired health if this is normal health
+        if self.health_type == "normal" and all_health_entries:
+            # Find chimerical health if it exists
+            chimerical_health = next((h for h in all_health_entries if h.get("health_type") == "chimerical"), None)
+
+            # If found, use the combined display
+            if chimerical_health:
+                chimerical_obj = Health(
+                    health_type=chimerical_health.get("health_type"),
+                    damage=chimerical_health.get("damage", []),
+                    health_levels=chimerical_health.get("health_levels", None)
+                )
+                return display_health(self, chimerical_obj)
+
+        # Otherwise just display this health tracker alone
+        return display_health(self)
+
+
+def display_health(normal_health, chimerical_health=None):
+    """
+    Display health levels with symbols for normal and optional chimerical health.
+
+    Args:
+        normal_health: A Health object of normal type
+        chimerical_health: An optional Health object of chimerical type
+
+    Returns:
+        str: A formatted string displaying the health levels
+    """
+    symbol_map = {
+        None: ":stop_button:",
+        DamageEnum.Bashing.value: ":regional_indicator_b:",
+        DamageEnum.Lethal.value: ":regional_indicator_l:",
+        DamageEnum.Aggravated.value: ":regional_indicator_a:"
+    }
+
+    lines = []
+
+    # If we have both normal and chimerical health, add a header row
+    if chimerical_health:
+        lines.append(":blue_square: :regional_indicator_c:")
+
+    # Map both health objects to their entries
+    normal_entries = normal_health.map_damage_to_health()
+    chimerical_entries = chimerical_health.map_damage_to_health() if chimerical_health else None
+
+    # Create display for each health level
+    for idx, normal_entry in enumerate(normal_entries):
+        normal_symbol = symbol_map.get(normal_entry['damage_type'], "O")
+        penalty = normal_entry['penalty']
+        penalty_str = f" ({penalty})" if penalty != 0 and penalty != -999 else ""
+        health_level_text = f"{normal_entry['health_level']}{penalty_str}"
+
+        if chimerical_health and idx < len(chimerical_entries):
+            chimerical_entry = chimerical_entries[idx]
+            chimerical_symbol = symbol_map.get(chimerical_entry['damage_type'], "O")
+            lines.append(f"{normal_symbol} {chimerical_symbol} {health_level_text}")
+        else:
+            lines.append(f"{normal_symbol} {health_level_text}")
+
+    return "\n".join(lines)
