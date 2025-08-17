@@ -1,8 +1,4 @@
-import pytest
-from unittest.mock import patch, MagicMock
-import os
-import sys
-import html
+from unittest.mock import patch
 
 # Import utilities
 from utils import (
@@ -11,16 +7,14 @@ from utils import (
     get_all_user_characters_for_user,
     rename_character,
     remove_character,
-    sanitize_string,
-    fully_unescape
 )
 
-class TestCharacterManagement:
 
+class TestCharacterManagement:
     # Test adding a character
     def test_add_character(self, test_characters_collection):
         # Patch the characters_collection with our test collection
-        with patch('utils.characters_collection', test_characters_collection):
+        with patch("utils.characters_collection", test_characters_collection):
             # Add a character
             user_id = "test_user_1"
             character_name = "Test Character"
@@ -44,7 +38,7 @@ class TestCharacterManagement:
     # Test character name sanitization
     def test_character_name_sanitization(self, test_characters_collection):
         # Patch the characters_collection with our test collection
-        with patch('utils.characters_collection', test_characters_collection):
+        with patch("utils.characters_collection", test_characters_collection):
             # Add a character with HTML in the name
             user_id = "test_user_sanitize"
             character_name = "<script>alert('XSS')</script>Character"
@@ -55,7 +49,7 @@ class TestCharacterManagement:
             assert "alphanumeric characters, spaces, and underscores" in error
 
             # Add a character with control characters
-            character_name_with_controls = "Bad\x00Character\x1FName"
+            character_name_with_controls = "Bad\x00Character\x1fName"
             success, error = add_user_character(user_id, character_name_with_controls)
             assert success is False
             assert "alphanumeric characters, spaces, and underscores" in error
@@ -68,14 +62,16 @@ class TestCharacterManagement:
 
             # Add a character with underscores (should succeed)
             character_name_with_underscores = "Good_Character_Name"
-            success, error = add_user_character(user_id, character_name_with_underscores)
+            success, error = add_user_character(
+                user_id, character_name_with_underscores
+            )
             assert success is True
             assert error is None
 
     # Test character name uniqueness constraint
     def test_character_name_uniqueness(self, test_characters_collection):
         # Patch the characters_collection with our test collection
-        with patch('utils.characters_collection', test_characters_collection):
+        with patch("utils.characters_collection", test_characters_collection):
             # Add a character
             user_id = "test_user_uniqueness"
             character_name = "Unique Character"
@@ -108,7 +104,9 @@ class TestCharacterManagement:
             print(f"Characters for {entity_user_id}: {[c.character for c in chars]}")
 
             # Try to add the same character again - should fail
-            print(f"Attempting to add duplicate character: {entity_character} for user {entity_user_id}")
+            print(
+                f"Attempting to add duplicate character: {entity_character} for user {entity_user_id}"
+            )
             success2, error2 = add_user_character(entity_user_id, entity_character)
 
             # Check if it failed
@@ -118,12 +116,16 @@ class TestCharacterManagement:
             assert "already exists" in error2
 
             # Try adding a differently cased version of the character
-            success3, error3 = add_user_character(entity_user_id, entity_character.upper())
+            success3, error3 = add_user_character(
+                entity_user_id, entity_character.upper()
+            )
             assert success3 is True, "Adding differently cased character should succeed"
 
             # Verify we now have 2 characters for this user
             chars_after = get_all_user_characters_for_user(entity_user_id)
-            assert len(chars_after) == 2, f"Expected 2 characters but found {len(chars_after)}"
+            assert len(chars_after) == 2, (
+                f"Expected 2 characters but found {len(chars_after)}"
+            )
 
             # Verify a different user can add a character with the same name
             other_user_id = "test_user_uniqueness_2"
@@ -136,7 +138,7 @@ class TestCharacterManagement:
     # Test renaming character uniqueness constraint
     def test_rename_character_uniqueness(self, test_characters_collection):
         # Patch the characters_collection with our test collection
-        with patch('utils.characters_collection', test_characters_collection):
+        with patch("utils.characters_collection", test_characters_collection):
             # Add two characters
             user_id = "test_user_rename"
             add_user_character(user_id, "Character One")
@@ -201,8 +203,10 @@ class TestCharacterManagement:
             assert "alphanumeric characters, spaces, and underscores" in error
 
     def test_maximum_allowed_characters_per_user(self, test_characters_collection):
-        with patch('utils.characters_collection', test_characters_collection), \
-             patch('utils.MAX_USER_CHARACTERS', 5):
+        with (
+            patch("utils.characters_collection", test_characters_collection),
+            patch("utils.MAX_USER_CHARACTERS", 5),
+        ):
             user_id = "max_user"
             # Add up to the limit
             for i in range(5):
@@ -216,7 +220,7 @@ class TestCharacterManagement:
             assert "maximum" in error.lower()
 
     def test_empty_or_whitespace_character_names(self, test_characters_collection):
-        with patch('utils.characters_collection', test_characters_collection):
+        with patch("utils.characters_collection", test_characters_collection):
             user_id = "empty_name_user"
             # Empty string
             success, error = add_user_character(user_id, "")
@@ -240,8 +244,10 @@ class TestCharacterManagement:
             assert error is not None
 
     def test_overly_long_character_names(self, test_characters_collection):
-        with patch('utils.characters_collection', test_characters_collection), \
-             patch('utils.MAX_FIELD_LENGTH', 10):
+        with (
+            patch("utils.characters_collection", test_characters_collection),
+            patch("utils.MAX_FIELD_LENGTH", 10),
+        ):
             user_id = "long_name_user"
             long_name = "A" * 11
             # Add with overly long name
@@ -258,7 +264,7 @@ class TestCharacterManagement:
             assert "must be at most" in error.lower()
 
     def test_removing_characters(self, test_characters_collection):
-        with patch('utils.characters_collection', test_characters_collection):
+        with patch("utils.characters_collection", test_characters_collection):
             user_id = "remove_user"
             character_name = "Removable"
             add_user_character(user_id, character_name)
@@ -277,8 +283,10 @@ class TestCharacterManagement:
             characters = get_all_user_characters_for_user(user_id)
             assert all(c.character != character_name for c in characters)
 
-    def test_retrieving_characters_for_users_with_none(self, test_characters_collection):
-        with patch('utils.characters_collection', test_characters_collection):
+    def test_retrieving_characters_for_users_with_none(
+        self, test_characters_collection
+    ):
+        with patch("utils.characters_collection", test_characters_collection):
             user_id = "no_chars_user"
             characters = get_all_user_characters_for_user(user_id)
             assert isinstance(characters, list)
@@ -286,11 +294,15 @@ class TestCharacterManagement:
 
     def test_database_errors(self, test_characters_collection):
         # Patch methods to simulate errors
-        with patch('utils.characters_collection', test_characters_collection):
+        with patch("utils.characters_collection", test_characters_collection):
             user_id = "db_error_user"
             character_name = "DBErrorChar"
             # Simulate insert error
-            with patch.object(test_characters_collection, 'insert_one', side_effect=Exception("DB insert failed")):
+            with patch.object(
+                test_characters_collection,
+                "insert_one",
+                side_effect=Exception("DB insert failed"),
+            ):
                 try:
                     success, error = add_user_character(user_id, character_name)
                 except Exception as e:
@@ -300,7 +312,11 @@ class TestCharacterManagement:
                 assert "db" in error.lower() or "error" in error.lower()
             # Simulate update error
             add_user_character(user_id, "ToRename")
-            with patch.object(test_characters_collection, 'update_one', side_effect=Exception("DB update failed")):
+            with patch.object(
+                test_characters_collection,
+                "update_one",
+                side_effect=Exception("DB update failed"),
+            ):
                 try:
                     success, error = rename_character(user_id, "ToRename", "Renamed")
                 except Exception as e:
@@ -310,7 +326,11 @@ class TestCharacterManagement:
                 assert "db" in error.lower() or "error" in error.lower()
             # Simulate delete error
             add_user_character(user_id, "ToDelete")
-            with patch.object(test_characters_collection, 'delete_one', side_effect=Exception("DB delete failed")):
+            with patch.object(
+                test_characters_collection,
+                "delete_one",
+                side_effect=Exception("DB delete failed"),
+            ):
                 try:
                     result = remove_character(user_id, "ToDelete")
                     if isinstance(result, tuple):

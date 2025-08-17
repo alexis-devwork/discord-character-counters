@@ -1,15 +1,13 @@
-import pytest
-from unittest.mock import patch, MagicMock
-import os
-import sys
 
 # Import health-related functionality
 from health import Health, HealthTypeEnum, DamageEnum, display_health, HEALTH_LEVELS
 from utils import add_health_level
 from bson import ObjectId
 
+
 class DummyRepo:
     """Dummy repository for mocking CharacterRepository in add_health_level tests."""
+
     def __init__(self):
         self.docs = {}
 
@@ -23,20 +21,25 @@ class DummyRepo:
         if doc:
             doc.update(update["$set"])
 
+
 def make_char_doc(_id, health_type="normal", health_levels=None):
     return {
         "_id": ObjectId(_id),
         "user": "user1",
         "character": "TestChar",
-        "health": [{
-            "health_type": health_type,
-            "damage": [],
-            "health_levels": health_levels if health_levels is not None else ["Bruised", "Hurt"]
-        }]
+        "health": [
+            {
+                "health_type": health_type,
+                "damage": [],
+                "health_levels": health_levels
+                if health_levels is not None
+                else ["Bruised", "Hurt"],
+            }
+        ],
     }
 
-class TestHealthSystem:
 
+class TestHealthSystem:
     # Test health initialization
     def test_health_initialization(self):
         # Create a health object with default values
@@ -53,7 +56,7 @@ class TestHealthSystem:
         health = Health(
             health_type=HealthTypeEnum.chimerical.value,
             damage=custom_damage,
-            health_levels=custom_levels
+            health_levels=custom_levels,
         )
 
         # Check custom values
@@ -139,11 +142,11 @@ class TestHealthSystem:
         health = Health(health_type=HealthTypeEnum.normal.value)
         health.add_damage(2, DamageEnum.Bashing)
         mapped = health.map_damage_to_health()
-        assert mapped[0]['damage_type'] == DamageEnum.Bashing.value
-        assert mapped[1]['damage_type'] == DamageEnum.Bashing.value
+        assert mapped[0]["damage_type"] == DamageEnum.Bashing.value
+        assert mapped[1]["damage_type"] == DamageEnum.Bashing.value
         # Penalties should match HEALTH_LEVELS
         for entry in mapped:
-            assert entry['penalty'] == HEALTH_LEVELS[entry['health_level']]
+            assert entry["penalty"] == HEALTH_LEVELS[entry["health_level"]]
 
     def test_no_damage_added_if_levels_zero_or_negative(self):
         health = Health(health_type=HealthTypeEnum.normal.value)
@@ -156,7 +159,11 @@ class TestHealthSystem:
     def test_remove_damage(self):
         # Create a health object with some damage
         health = Health(health_type=HealthTypeEnum.normal.value)
-        health.damage = [DamageEnum.Bashing.value, DamageEnum.Lethal.value, DamageEnum.Aggravated.value]
+        health.damage = [
+            DamageEnum.Bashing.value,
+            DamageEnum.Lethal.value,
+            DamageEnum.Aggravated.value,
+        ]
         initial_damage = len(health.damage)
 
         # Remove some damage
@@ -180,7 +187,6 @@ class TestHealthSystem:
         # Add bashing damage
         health.add_damage(1, DamageEnum.Bashing)
         assert health.damage[0] == DamageEnum.Bashing.value
-
 
         # Add another lethal damage (should add a new damage level)
         health.add_damage(1, DamageEnum.Lethal)
@@ -214,10 +220,13 @@ class TestHealthSystem:
         # Test display with both normal and chimerical health
         combined_display = display_health(normal_health, chimerical_health)
         assert combined_display is not None
-        assert ":blue_square: :regional_indicator_c:" in combined_display  # Should have header
+        assert (
+            ":blue_square: :regional_indicator_c:" in combined_display
+        )  # Should have header
         assert ":regional_indicator_b:" in combined_display  # Normal bashing
         assert ":regional_indicator_l:" in combined_display  # Normal lethal
         assert ":regional_indicator_a:" in combined_display  # Chimerical aggravated
+
 
 def test_add_health_level_success(monkeypatch):
     repo = DummyRepo()
@@ -232,6 +241,7 @@ def test_add_health_level_success(monkeypatch):
     assert error is None
     assert doc["health"][0]["health_levels"].count("Hurt") == initial_count + 1
 
+
 def test_add_health_level_duplicate(monkeypatch):
     repo = DummyRepo()
     char_id = "507f1f77bcf86cd799439012"
@@ -245,6 +255,7 @@ def test_add_health_level_duplicate(monkeypatch):
     assert error is None
     assert doc["health"][0]["health_levels"].count("Hurt") == initial_count + 1
 
+
 def test_add_health_level_no_tracker(monkeypatch):
     repo = DummyRepo()
     char_id = "507f1f77bcf86cd799439013"
@@ -257,6 +268,7 @@ def test_add_health_level_no_tracker(monkeypatch):
     assert not success
     assert error == "Health tracker not found."
 
+
 def test_add_health_level_character_not_found(monkeypatch):
     repo = DummyRepo()
     char_id = "507f1f77bcf86cd799439014"
@@ -266,11 +278,13 @@ def test_add_health_level_character_not_found(monkeypatch):
     assert not success
     assert error == "Character not found."
 
+
 def test_health_class_dynamic_levels():
     health = Health(health_type="normal", health_levels=["Bruised", "Hurt"])
     assert health.health_levels == ["Bruised", "Hurt"]
     health.set_health_levels(["Bruised", "Hurt", "Wounded"])
     assert health.health_levels == ["Bruised", "Hurt", "Wounded"]
+
 
 def test_health_add_damage_with_extra_level():
     health = Health(health_type="normal", health_levels=["Bruised", "Hurt", "Wounded"])

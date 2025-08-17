@@ -1,31 +1,28 @@
 import discord
-from discord import app_commands
 from utils import (
-    sanitize_string,
     get_character_id_by_user_and_name,
     get_counters_for_character,
-    update_counter_comment,
     set_counter_category,
     generate_counters_output,
     fully_unescape,
     rename_counter,
     rename_character,
     update_counter,
-    display_character_counters,
     handle_character_not_found,
     handle_counter_not_found,
-    update_counter_in_db  # Add import
+    update_counter_in_db,  # Add import
 )
-from utils import characters_collection, CharacterRepository
+from utils import CharacterRepository
 from bson import ObjectId
 from health import Health
 from .autocomplete import (
     character_name_autocomplete,
     counter_name_autocomplete_for_character,
-    category_autocomplete
+    category_autocomplete,
 )
 from avct_cog import register_command
 from counter import CounterTypeEnum
+
 
 @register_command("edit_group")
 def register_edit_commands(cog):
@@ -33,27 +30,36 @@ def register_edit_commands(cog):
     async def _validate_field(interaction, field):
         """Validate that the field is 'temp' or 'perm'."""
         if field not in ["temp", "perm"]:
-            await interaction.response.send_message("Field must be 'temp' or 'perm'.", ephemeral=True)
+            await interaction.response.send_message(
+                "Field must be 'temp' or 'perm'.", ephemeral=True
+            )
             return False
         return True
 
     async def _validate_value(interaction, value):
         """Validate that the value is a non-negative integer."""
         if not isinstance(value, int) or value < 0:
-            await interaction.response.send_message("Value must be a non-negative integer.", ephemeral=True)
+            await interaction.response.send_message(
+                "Value must be a non-negative integer.", ephemeral=True
+            )
             return False
         return True
 
     async def _update_temp_value(target, value, interaction):
         """Update the temp value with appropriate validations."""
         if value < 0:
-            await interaction.response.send_message("Cannot set temp below zero.", ephemeral=True)
+            await interaction.response.send_message(
+                "Cannot set temp below zero.", ephemeral=True
+            )
             return None, False
         # For single_number type, set perm to same value
         if target.counter_type == CounterTypeEnum.single_number.value:
             target.perm = value
             return value, True
-        if target.counter_type in [CounterTypeEnum.perm_is_maximum.value, CounterTypeEnum.perm_is_maximum_bedlam.value]:
+        if target.counter_type in [
+            CounterTypeEnum.perm_is_maximum.value,
+            CounterTypeEnum.perm_is_maximum_bedlam.value,
+        ]:
             if value > target.perm:
                 return target.perm, True
             else:
@@ -73,7 +79,10 @@ def register_edit_commands(cog):
             target.temp = value
         target.perm = value
         # For perm_is_maximum types, adjust temp if perm is lowered below temp
-        if target.counter_type in [CounterTypeEnum.perm_is_maximum.value, CounterTypeEnum.perm_is_maximum_bedlam.value]:
+        if target.counter_type in [
+            CounterTypeEnum.perm_is_maximum.value,
+            CounterTypeEnum.perm_is_maximum_bedlam.value,
+        ]:
             if target.temp > target.perm:
                 target.temp = target.perm
         return target
@@ -88,9 +97,7 @@ def register_edit_commands(cog):
         return update_counter_in_db(character_id, counter, "perm", target.perm, target)
 
     def _build_full_character_output(character_id):
-        from utils import CharacterRepository
-        from bson import ObjectId
-        from health import Health, HealthTypeEnum
+        from health import HealthTypeEnum
 
         counters = get_counters_for_character(character_id)
         msg = generate_counters_output(counters, fully_unescape)
@@ -99,34 +106,51 @@ def register_edit_commands(cog):
         if health_entries:
             # Replicate _build_health_output logic from character_commands.py
             msg += "\n\n**Health Trackers:**"
-            normal_health = next((h for h in health_entries if h.get("health_type") == HealthTypeEnum.normal.value), None)
+            normal_health = next(
+                (
+                    h
+                    for h in health_entries
+                    if h.get("health_type") == HealthTypeEnum.normal.value
+                ),
+                None,
+            )
             if normal_health:
                 health_obj = Health(
                     health_type=normal_health.get("health_type"),
                     damage=normal_health.get("damage", []),
-                    health_levels=normal_health.get("health_levels", None)
+                    health_levels=normal_health.get("health_levels", None),
                 )
                 msg += f"\n{health_obj.display(health_entries)}"
             for h in health_entries:
-                if h.get("health_type") != HealthTypeEnum.normal.value and h.get("health_type") != HealthTypeEnum.chimerical.value:
+                if (
+                    h.get("health_type") != HealthTypeEnum.normal.value
+                    and h.get("health_type") != HealthTypeEnum.chimerical.value
+                ):
                     health_obj = Health(
                         health_type=h.get("health_type"),
                         damage=h.get("damage", []),
-                        health_levels=h.get("health_levels", None)
+                        health_levels=h.get("health_levels", None),
                     )
-                    msg += f"\nHealth ({health_obj.health_type}):\n{health_obj.display()}"
+                    msg += (
+                        f"\nHealth ({health_obj.health_type}):\n{health_obj.display()}"
+                    )
         return msg
 
     # These all stay in the configav edit group which was already defined in avct_cog.py
 
-    @cog.edit_group.command(name="counter", description="Set temp or perm for a counter")
-    @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)
+    @cog.edit_group.command(
+        name="counter", description="Set temp or perm for a counter"
+    )
+    @discord.app_commands.autocomplete(
+        character=character_name_autocomplete,
+        counter=counter_name_autocomplete_for_character,
+    )
     async def set_counter_cmd(
         interaction: discord.Interaction,
         character: str,
         counter: str,
         field: str,
-        value: int
+        value: int,
     ):
         user_id = str(interaction.user.id)
         character_id = get_character_id_by_user_and_name(user_id, character)
@@ -155,15 +179,20 @@ def register_edit_commands(cog):
             and value == 0
         ):
             from utils import remove_counter
+
             success, error, details = remove_counter(character_id, counter)
             if success:
                 msg = details if details else "No remaining counters."
                 await interaction.response.send_message(
                     f"Counter '{counter}' was removed from character '{character}' because its value reached 0.\nRemaining counters:\n{msg}",
-                    ephemeral=True
+                    ephemeral=True,
                 )
             else:
-                await handle_counter_not_found(interaction) if error == "Counter not found." else interaction.response.send_message(error or "Failed to remove counter.", ephemeral=True)
+                await handle_counter_not_found(
+                    interaction
+                ) if error == "Counter not found." else interaction.response.send_message(
+                    error or "Failed to remove counter.", ephemeral=True
+                )
             return
 
         # Update the appropriate field
@@ -173,7 +202,9 @@ def register_edit_commands(cog):
                 target.temp = 0
                 target.perm = 0
             else:
-                new_value, is_valid = await _update_temp_value(target, value, interaction)
+                new_value, is_valid = await _update_temp_value(
+                    target, value, interaction
+                )
                 if not is_valid:
                     return
                 target.temp = new_value
@@ -184,16 +215,22 @@ def register_edit_commands(cog):
                 target.temp = 0
             else:
                 # For perm_is_maximum types, check if temp would be greater than perm
-                if target.counter_type in [CounterTypeEnum.perm_is_maximum.value, CounterTypeEnum.perm_is_maximum_bedlam.value]:
+                if target.counter_type in [
+                    CounterTypeEnum.perm_is_maximum.value,
+                    CounterTypeEnum.perm_is_maximum_bedlam.value,
+                ]:
                     if target.temp > value:
                         await interaction.response.send_message(
                             "Temp cannot be greater than perm for this counter type. No changes were saved.",
-                            ephemeral=True
+                            ephemeral=True,
                         )
                         return
                 target.perm = value
                 # For perm_is_maximum types, adjust temp if perm is lowered below temp
-                if target.counter_type in [CounterTypeEnum.perm_is_maximum.value, CounterTypeEnum.perm_is_maximum_bedlam.value]:
+                if target.counter_type in [
+                    CounterTypeEnum.perm_is_maximum.value,
+                    CounterTypeEnum.perm_is_maximum_bedlam.value,
+                ]:
                     if target.temp > target.perm:
                         target.temp = target.perm
 
@@ -204,16 +241,18 @@ def register_edit_commands(cog):
         msg = generate_counters_output(counters, fully_unescape)
         await interaction.response.send_message(
             f"Set {field} for counter '{counter}' on character '{character}' to {value}.\n"
-            f"Counters for character '{character}':\n{msg}", ephemeral=True)
+            f"Counters for character '{character}':\n{msg}",
+            ephemeral=True,
+        )
 
     # --- Edit comment ---
     @cog.edit_group.command(name="comment", description="Set the comment for a counter")
-    @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)
+    @discord.app_commands.autocomplete(
+        character=character_name_autocomplete,
+        counter=counter_name_autocomplete_for_character,
+    )
     async def edit_comment_cmd(
-        interaction: discord.Interaction,
-        character: str,
-        counter: str,
-        comment: str
+        interaction: discord.Interaction, character: str, counter: str, comment: str
     ):
         user_id = str(interaction.user.id)
         character_id = get_character_id_by_user_and_name(user_id, character)
@@ -225,18 +264,27 @@ def register_edit_commands(cog):
 
         if success:
             await interaction.response.send_message(
-                f"Comment for counter '{counter}' on character '{character}' set.", ephemeral=True)
+                f"Comment for counter '{counter}' on character '{character}' set.",
+                ephemeral=True,
+            )
         else:
-            await handle_counter_not_found(interaction) if error == "Counter not found." else interaction.response.send_message(error or "Failed to set comment.", ephemeral=True)
+            await handle_counter_not_found(
+                interaction
+            ) if error == "Counter not found." else interaction.response.send_message(
+                error or "Failed to set comment.", ephemeral=True
+            )
 
     # --- Edit category ---
-    @cog.edit_group.command(name="category", description="Set the category for a counter")
-    @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character, category=category_autocomplete)
+    @cog.edit_group.command(
+        name="category", description="Set the category for a counter"
+    )
+    @discord.app_commands.autocomplete(
+        character=character_name_autocomplete,
+        counter=counter_name_autocomplete_for_character,
+        category=category_autocomplete,
+    )
     async def edit_category_cmd(
-        interaction: discord.Interaction,
-        character: str,
-        counter: str,
-        category: str
+        interaction: discord.Interaction, character: str, counter: str, category: str
     ):
         user_id = str(interaction.user.id)
         character_id = get_character_id_by_user_and_name(user_id, character)
@@ -248,18 +296,26 @@ def register_edit_commands(cog):
 
         if success:
             await interaction.response.send_message(
-                f"Category for counter '{counter}' on character '{character}' set to '{category}'.", ephemeral=True)
+                f"Category for counter '{counter}' on character '{character}' set to '{category}'.",
+                ephemeral=True,
+            )
         else:
-            await handle_counter_not_found(interaction) if error == "Counter not found." else interaction.response.send_message(error or "Failed to set category.", ephemeral=True)
+            await handle_counter_not_found(
+                interaction
+            ) if error == "Counter not found." else interaction.response.send_message(
+                error or "Failed to set category.", ephemeral=True
+            )
 
     # --- Rename counter ---
-    @cog.rename_group.command(name="counter", description="Rename a counter for a character")
-    @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)
+    @cog.rename_group.command(
+        name="counter", description="Rename a counter for a character"
+    )
+    @discord.app_commands.autocomplete(
+        character=character_name_autocomplete,
+        counter=counter_name_autocomplete_for_character,
+    )
     async def rename_counter_cmd(
-        interaction: discord.Interaction,
-        character: str,
-        counter: str,
-        new_name: str
+        interaction: discord.Interaction, character: str, counter: str, new_name: str
     ):
         user_id = str(interaction.user.id)
         character_id = get_character_id_by_user_and_name(user_id, character)
@@ -271,38 +327,45 @@ def register_edit_commands(cog):
 
         if success:
             await interaction.response.send_message(
-                f"Counter '{counter}' on character '{character}' renamed to '{new_name}'.", ephemeral=True)
+                f"Counter '{counter}' on character '{character}' renamed to '{new_name}'.",
+                ephemeral=True,
+            )
         else:
-            await handle_counter_not_found(interaction) if error == "Counter to rename not found." else interaction.response.send_message(error or "Failed to rename counter.", ephemeral=True)
+            await handle_counter_not_found(
+                interaction
+            ) if error == "Counter to rename not found." else interaction.response.send_message(
+                error or "Failed to rename counter.", ephemeral=True
+            )
 
     # --- Rename character ---
     @cog.rename_group.command(name="character", description="Rename a character")
     @discord.app_commands.autocomplete(character=character_name_autocomplete)
     async def rename_character_cmd(
-        interaction: discord.Interaction,
-        character: str,
-        new_name: str
+        interaction: discord.Interaction, character: str, new_name: str
     ):
         user_id = str(interaction.user.id)
         success, error = rename_character(user_id, character, new_name)
 
         if success:
             await interaction.response.send_message(
-                f"Character '{character}' renamed to '{new_name}'.", ephemeral=True)
+                f"Character '{character}' renamed to '{new_name}'.", ephemeral=True
+            )
         else:
             # Always await the response, even for validation errors
             if error == "Character to rename not found.":
                 await handle_character_not_found(interaction)
             else:
-                await interaction.response.send_message(error or "Failed to rename character.", ephemeral=True)
+                await interaction.response.send_message(
+                    error or "Failed to rename character.", ephemeral=True
+                )
 
     @cog.avct_group.command(name="plus", description="Add points to a counter")
-    @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)
+    @discord.app_commands.autocomplete(
+        character=character_name_autocomplete,
+        counter=counter_name_autocomplete_for_character,
+    )
     async def plus_cmd(
-        interaction: discord.Interaction,
-        character: str,
-        counter: str,
-        points: int = 1
+        interaction: discord.Interaction, character: str, counter: str, points: int = 1
     ):
         user_id = str(interaction.user.id)
         character_id = get_character_id_by_user_and_name(user_id, character)
@@ -325,7 +388,9 @@ def register_edit_commands(cog):
             msg = _build_full_character_output(character_id)
             await interaction.response.send_message(
                 f"Added {points} point(s) to counter '{counter}' on character '{character}'.\n\n"
-                f"{msg}", ephemeral=True)
+                f"{msg}",
+                ephemeral=True,
+            )
             return
 
         success, error = update_counter(character_id, counter, "temp", points)
@@ -334,9 +399,13 @@ def register_edit_commands(cog):
             msg = _build_full_character_output(character_id)
             await interaction.response.send_message(
                 f"Added {points} point(s) to counter '{counter}' on character '{character}'.\n\n"
-                f"{msg}", ephemeral=True)
+                f"{msg}",
+                ephemeral=True,
+            )
         else:
             if error == "Counter not found.":
                 await handle_counter_not_found(interaction)
             else:
-                await interaction.response.send_message(error or "Failed to add points to counter.", ephemeral=True)
+                await interaction.response.send_message(
+                    error or "Failed to add points to counter.", ephemeral=True
+                )

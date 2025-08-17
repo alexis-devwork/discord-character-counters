@@ -1,27 +1,25 @@
 import discord
 from utils import (
-    sanitize_string,
     get_character_id_by_user_and_name,
     get_counters_for_character,
     generate_counters_output,
     fully_unescape,
-    display_character_counters,
     handle_character_not_found,
     handle_invalid_health_type,
     handle_invalid_damage_type,
     handle_health_tracker_not_found,
     update_health_in_db,  # Add import
-    add_health_level  # Add import
+    add_health_level,  # Add import
 )
-from utils import characters_collection, CharacterRepository
+from utils import CharacterRepository
 from health import Health, HealthTypeEnum, DamageEnum, HealthLevelEnum
 from bson import ObjectId
 from .autocomplete import (
     character_name_autocomplete,
-    health_type_autocomplete,
-    damage_type_autocomplete
+    damage_type_autocomplete,
 )
 from avct_cog import register_command
+
 
 @register_command("avct_group")
 def register_health_commands(cog):
@@ -32,14 +30,16 @@ def register_health_commands(cog):
 
     def _get_health_tracker(health_list, health_type):
         """Find and return a specific health tracker from the list."""
-        return next((h for h in health_list if h.get("health_type") == health_type), None)
+        return next(
+            (h for h in health_list if h.get("health_type") == health_type), None
+        )
 
     def _create_health_object(health_dict):
         """Create a Health object from a dictionary."""
         return Health(
             health_type=health_dict.get("health_type"),
             damage=health_dict.get("damage", []),
-            health_levels=health_dict.get("health_levels", None)
+            health_levels=health_dict.get("health_levels", None),
         )
 
     # Deprecated: use update_health_in_db from utils
@@ -53,7 +53,7 @@ def register_health_commands(cog):
     async def _send_health_response(interaction, character, msg, action_msg):
         await interaction.response.send_message(
             f"{action_msg}\n\nCounters for character '{character}':\n{msg}",
-            ephemeral=True
+            ephemeral=True,
         )
 
     def _build_full_character_output(character_id):
@@ -67,33 +67,50 @@ def register_health_commands(cog):
         health_entries = char_doc.get("health", []) if char_doc else []
         if health_entries:
             msg += "\n\n**Health Trackers:**"
-            normal_health = next((h for h in health_entries if h.get("health_type") == HealthTypeEnum.normal.value), None)
+            normal_health = next(
+                (
+                    h
+                    for h in health_entries
+                    if h.get("health_type") == HealthTypeEnum.normal.value
+                ),
+                None,
+            )
             if normal_health:
                 health_obj = Health(
                     health_type=normal_health.get("health_type"),
                     damage=normal_health.get("damage", []),
-                    health_levels=normal_health.get("health_levels", None)
+                    health_levels=normal_health.get("health_levels", None),
                 )
                 msg += f"\n{health_obj.display(health_entries)}"
             for h in health_entries:
-                if h.get("health_type") != HealthTypeEnum.normal.value and h.get("health_type") != HealthTypeEnum.chimerical.value:
+                if (
+                    h.get("health_type") != HealthTypeEnum.normal.value
+                    and h.get("health_type") != HealthTypeEnum.chimerical.value
+                ):
                     health_obj = Health(
                         health_type=h.get("health_type"),
                         damage=h.get("damage", []),
-                        health_levels=h.get("health_levels", None)
+                        health_levels=h.get("health_levels", None),
                     )
-                    msg += f"\nHealth ({health_obj.health_type}):\n{health_obj.display()}"
+                    msg += (
+                        f"\nHealth ({health_obj.health_type}):\n{health_obj.display()}"
+                    )
         return msg
 
     # Modified damage command moved directly to avct_group
-    @cog.avct_group.command(name="damage", description="Add damage to a health tracker (defaults to normal health)")
-    @discord.app_commands.autocomplete(character=character_name_autocomplete, damage_type=damage_type_autocomplete)
+    @cog.avct_group.command(
+        name="damage",
+        description="Add damage to a health tracker (defaults to normal health)",
+    )
+    @discord.app_commands.autocomplete(
+        character=character_name_autocomplete, damage_type=damage_type_autocomplete
+    )
     async def damage(
         interaction: discord.Interaction,
         character: str,
         damage_type: str,
         levels: int,
-        chimerical: bool = False  # Optional boolean flag for chimerical damage
+        chimerical: bool = False,  # Optional boolean flag for chimerical damage
     ):
         user_id = str(interaction.user.id)
         character_id = get_character_id_by_user_and_name(user_id, character)
@@ -102,7 +119,11 @@ def register_health_commands(cog):
             await handle_character_not_found(interaction)
             return
 
-        health_type = HealthTypeEnum.chimerical.value if chimerical else HealthTypeEnum.normal.value
+        health_type = (
+            HealthTypeEnum.chimerical.value
+            if chimerical
+            else HealthTypeEnum.normal.value
+        )
 
         try:
             dt_enum = DamageEnum(damage_type)
@@ -123,24 +144,33 @@ def register_health_commands(cog):
         damage_msg = health_obj.add_damage(levels, dt_enum)
 
         # Update health in MongoDB
-        _update_health_in_database(character_id, health_list, health_type, health_obj.damage)
+        _update_health_in_database(
+            character_id, health_list, health_type, health_obj.damage
+        )
 
         # Generate the same output as character counters
         msg = _build_full_character_output(character_id)
 
-        action_msg = damage_msg if damage_msg else (
-            f"Added {levels} levels of {damage_type} damage to {_health_type_display(chimerical)} health."
+        action_msg = (
+            damage_msg
+            if damage_msg
+            else (
+                f"Added {levels} levels of {damage_type} damage to {_health_type_display(chimerical)} health."
+            )
         )
         await _send_health_response(interaction, character, msg, action_msg)
 
     # Modified heal command to default to normal health type
-    @cog.avct_group.command(name="heal", description="Heal damage from a health tracker (defaults to normal health)")
+    @cog.avct_group.command(
+        name="heal",
+        description="Heal damage from a health tracker (defaults to normal health)",
+    )
     @discord.app_commands.autocomplete(character=character_name_autocomplete)
     async def heal(
         interaction: discord.Interaction,
         character: str,
         levels: int,
-        chimerical: bool = False  # Optional boolean flag for chimerical healing
+        chimerical: bool = False,  # Optional boolean flag for chimerical healing
     ):
         user_id = str(interaction.user.id)
         character_id = get_character_id_by_user_and_name(user_id, character)
@@ -149,7 +179,11 @@ def register_health_commands(cog):
             await handle_character_not_found(interaction)
             return
 
-        health_type = HealthTypeEnum.chimerical.value if chimerical else HealthTypeEnum.normal.value
+        health_type = (
+            HealthTypeEnum.chimerical.value
+            if chimerical
+            else HealthTypeEnum.normal.value
+        )
 
         char_doc = _get_character_document(character_id)
         health_list = char_doc.get("health", [])
@@ -164,7 +198,9 @@ def register_health_commands(cog):
         health_obj.remove_damage(levels)
 
         # Update health in MongoDB
-        _update_health_in_database(character_id, health_list, health_type, health_obj.damage)
+        _update_health_in_database(
+            character_id, health_list, health_type, health_obj.damage
+        )
 
         # Generate the same output as character counters
         msg = _build_full_character_output(character_id)
@@ -172,7 +208,10 @@ def register_health_commands(cog):
         action_msg = f"Healed {levels} levels of damage from {_health_type_display(chimerical)} health."
         await _send_health_response(interaction, character, msg, action_msg)
 
-async def health_level_type_autocomplete(interaction: discord.Interaction, current: str):
+
+async def health_level_type_autocomplete(
+    interaction: discord.Interaction, current: str
+):
     """Autocomplete health level types from HealthLevelEnum."""
     return [
         discord.app_commands.Choice(name=e.value, value=e.value)
@@ -180,21 +219,22 @@ async def health_level_type_autocomplete(interaction: discord.Interaction, curre
         if current.lower() in e.value.lower()
     ]
 
+
 @register_command("configav_group")
 def register_configav_health_commands(cog):
     @cog.configav_group.command(
         name="add_health_level",
-        description="Add an extra health level to a character's health tracker"
+        description="Add an extra health level to a character's health tracker",
     )
     @discord.app_commands.autocomplete(
         character=character_name_autocomplete,
-        health_level_type=health_level_type_autocomplete
+        health_level_type=health_level_type_autocomplete,
     )
     async def add_health_level_cmd(
         interaction: discord.Interaction,
         character: str,
         health_type: str,
-        health_level_type: str
+        health_level_type: str,
     ):
         user_id = str(interaction.user.id)
         character_id = get_character_id_by_user_and_name(user_id, character)
@@ -215,17 +255,19 @@ def register_configav_health_commands(cog):
             valid_levels = [e.value for e in HealthLevelEnum]
             await interaction.response.send_message(
                 f"Health level '{health_level_type}' is not valid. Choose from: {', '.join(valid_levels)}.",
-                ephemeral=True
+                ephemeral=True,
             )
             return
 
         # Add health level
         success, error = add_health_level(character_id, health_type, health_level_type)
         if not success:
-            await interaction.response.send_message(f"Failed to add health level: {error}", ephemeral=True)
+            await interaction.response.send_message(
+                f"Failed to add health level: {error}", ephemeral=True
+            )
             return
 
         await interaction.response.send_message(
             f"Added health level '{health_level_type}' to {health_type} health tracker for character '{character}'.",
-            ephemeral=True
+            ephemeral=True,
         )

@@ -1,7 +1,5 @@
 import pytest
-from unittest.mock import patch, MagicMock
-import os
-import sys
+from unittest.mock import patch
 
 # Import utilities
 from utils import (
@@ -12,17 +10,17 @@ from utils import (
     get_counters_for_character,
     update_counter,
     remove_counter,
-    rename_counter
+    rename_counter,
 )
 from counter import PredefinedCounterEnum, CategoryEnum, Counter, CounterTypeEnum
 
-class TestCounterManagement:
 
+class TestCounterManagement:
     # Test adding a custom counter
     def test_add_custom_counter(self, test_characters_collection):
         valid_object_id = "123456789012345678901234"  # Use valid ObjectId
 
-        with patch('utils.characters_collection', test_characters_collection):
+        with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_counter_1"
             character_name = "Counter Test Character"
 
@@ -36,7 +34,14 @@ class TestCounterManagement:
             comment = "Test comment"
             counter_type = "single_number"
 
-            success, error = add_counter(character_id, counter_name, value, category=category, comment=comment, counter_type=counter_type)
+            success, error = add_counter(
+                character_id,
+                counter_name,
+                value,
+                category=category,
+                comment=comment,
+                counter_type=counter_type,
+            )
 
             # Verify counter was added
             assert success is True
@@ -55,7 +60,14 @@ class TestCounterManagement:
             # Add a perm_is_maximum counter
             counter_name2 = "Max Counter"
             counter_type2 = "perm_is_maximum"
-            success, error = add_counter(character_id, counter_name2, 2, category=category, comment="max test", counter_type=counter_type2)
+            success, error = add_counter(
+                character_id,
+                counter_name2,
+                2,
+                category=category,
+                comment="max test",
+                counter_type=counter_type2,
+            )
             assert success is True
             counters = get_counters_for_character(character_id)
             counter2 = next((c for c in counters if c.counter == counter_name2), None)
@@ -66,7 +78,7 @@ class TestCounterManagement:
     def test_add_predefined_counter(self, test_characters_collection):
         valid_object_id = "123456789012345678901234"  # Use valid ObjectId
 
-        with patch('utils.characters_collection', test_characters_collection):
+        with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_counter_2"
             character_name = "Predefined Counter Test"
 
@@ -78,7 +90,9 @@ class TestCounterManagement:
             perm = 6
             comment = "Willpower test"
 
-            success, error = add_predefined_counter(character_id, counter_type, perm, comment)
+            success, error = add_predefined_counter(
+                character_id, counter_type, perm, comment
+            )
 
             # Verify counter was added
             assert success is True  # Fix assertion
@@ -98,7 +112,7 @@ class TestCounterManagement:
     def test_update_counter(self, test_characters_collection):
         valid_object_id = "123456789012345678901234"
 
-        with patch('utils.characters_collection', test_characters_collection):
+        with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_counter_3"
             character_name = "Update Counter Test"
 
@@ -148,7 +162,7 @@ class TestCounterManagement:
     def test_remove_counter(self, test_characters_collection):
         valid_object_id = "123456789012345678901234"  # Use valid ObjectId
 
-        with patch('utils.characters_collection', test_characters_collection):
+        with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_counter_4"
             character_name = "Remove Counter Test"
 
@@ -178,7 +192,7 @@ class TestCounterManagement:
     def test_counter_name_sanitization(self, test_characters_collection):
         valid_object_id = "123456789012345678901234"  # Use valid ObjectId
 
-        with patch('utils.characters_collection', test_characters_collection):
+        with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_sanitize"
             character_name = "Sanitization Test"
 
@@ -192,7 +206,7 @@ class TestCounterManagement:
             assert "alphanumeric characters, spaces, and underscores" in error
 
             # Add a counter with control characters
-            counter_name_with_controls = "Bad\x00Counter\x1FName"
+            counter_name_with_controls = "Bad\x00Counter\x1fName"
             success, error = add_counter(character_id, counter_name_with_controls, 5)
             assert success is False
             assert "alphanumeric characters, spaces, and underscores" in error
@@ -205,9 +219,15 @@ class TestCounterManagement:
 
             # Add a counter with comment containing HTML (comment is allowed to be sanitized, so no change)
             counter_name = "CommentTest"
-            comment = "<b>Important</b> note with control chars\x00\x1F"
+            comment = "<b>Important</b> note with control chars\x00\x1f"
             sanitized_comment = "&lt;b&gt;Important&lt;/b&gt; note with control chars"
-            success, error = add_counter(character_id, counter_name, 5, category=CategoryEnum.general.value, comment=comment)
+            success, error = add_counter(
+                character_id,
+                counter_name,
+                5,
+                category=CategoryEnum.general.value,
+                comment=comment,
+            )
             assert success is True
             assert error is None
             counters = get_counters_for_character(character_id)
@@ -219,7 +239,7 @@ class TestCounterManagement:
     def test_counter_name_uniqueness(self, test_characters_collection):
         valid_object_id = "123456789012345678901234"  # Use valid ObjectId
 
-        with patch('utils.characters_collection', test_characters_collection):
+        with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_uniqueness"
             character_name = "Uniqueness Test"
 
@@ -250,12 +270,11 @@ class TestCounterManagement:
             assert error is not None
             assert "A counter with that name exists" in error
 
-
     # Test renaming counter uniqueness constraint
     def test_rename_counter_uniqueness(self, test_characters_collection):
         valid_object_id = "123456789012345678901234"  # Use valid ObjectId
 
-        with patch('utils.characters_collection', test_characters_collection):
+        with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_rename_uniqueness"
             character_name = "Rename Uniqueness Test"
 
@@ -273,37 +292,56 @@ class TestCounterManagement:
 
             # Try with non-alphanumeric name
             non_alnum_name = "<i>CounterThree</i>"
-            success, error = rename_counter(str(character_id), "CounterOne", non_alnum_name)
+            success, error = rename_counter(
+                str(character_id), "CounterOne", non_alnum_name
+            )
             assert success is False
             assert "alphanumeric characters, spaces, and underscores" in error
 
             # Try renaming to a name with spaces (should succeed)
             spaced_name = "Counter Three With Spaces"
-            success, error = rename_counter(str(character_id), "CounterOne", spaced_name)
+            success, error = rename_counter(
+                str(character_id), "CounterOne", spaced_name
+            )
             assert success is True
             assert error is None
 
             # Try renaming to a name with only spaces (should fail)
             only_spaces = "    "
-            success, error = rename_counter(str(character_id), "CounterOne", only_spaces)
+            success, error = rename_counter(
+                str(character_id), "CounterOne", only_spaces
+            )
             assert success is False
             assert "empty" in error.lower() or "invalid" in error.lower()
 
             # Try renaming to a name with control characters (should fail)
             control_name = "Bad\x00Name"
-            success, error = rename_counter(str(character_id), "CounterOne", control_name)
+            success, error = rename_counter(
+                str(character_id), "CounterOne", control_name
+            )
             assert success is False
             assert "alphanumeric characters, spaces, and underscores" in error
 
     # Test updating counter category and comment after creation
     def test_update_counter_category_and_comment(self, test_characters_collection):
-        from utils import set_counter_category, update_counter_comment, get_counters_for_character
-        with patch('utils.characters_collection', test_characters_collection):
+        from utils import (
+            set_counter_category,
+            update_counter_comment,
+            get_counters_for_character,
+        )
+
+        with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_update_cat_comment"
             character_name = "Update CatComment"
             add_user_character(user_id, character_name)
             character_id = get_character_id_by_user_and_name(user_id, character_name)
-            add_counter(character_id, "CounterCat", 1, category="general", comment="Initial comment")
+            add_counter(
+                character_id,
+                "CounterCat",
+                1,
+                category="general",
+                comment="Initial comment",
+            )
             # Update category
             success, error = set_counter_category(character_id, "CounterCat", "tempers")
             assert success is True
@@ -312,7 +350,9 @@ class TestCounterManagement:
             counter = next((c for c in counters if c.counter == "CounterCat"), None)
             assert counter.category == "tempers"
             # Update comment
-            success, error = update_counter_comment(character_id, "CounterCat", "Updated comment")
+            success, error = update_counter_comment(
+                character_id, "CounterCat", "Updated comment"
+            )
             assert success is True
             assert error is None
             counters = get_counters_for_character(character_id)
@@ -322,12 +362,18 @@ class TestCounterManagement:
     # Test counter retrieval and display formatting
     def test_counter_retrieval_and_display(self, test_characters_collection):
         from counter import CounterTypeEnum
-        with patch('utils.characters_collection', test_characters_collection):
+
+        with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_display"
             character_name = "Display Character"
             add_user_character(user_id, character_name)
             character_id = get_character_id_by_user_and_name(user_id, character_name)
-            add_counter(character_id, "DisplayCounter", 2, counter_type=CounterTypeEnum.perm_is_maximum.value)
+            add_counter(
+                character_id,
+                "DisplayCounter",
+                2,
+                counter_type=CounterTypeEnum.perm_is_maximum.value,
+            )
             counters = get_counters_for_character(character_id)
             assert len(counters) == 1
             counter = counters[0]
@@ -338,9 +384,11 @@ class TestCounterManagement:
 
     # Test maximum allowed counters per character
     def test_maximum_counters_per_character(self, test_characters_collection):
-        from utils import MAX_COUNTERS_PER_CHARACTER
-        with patch('utils.characters_collection', test_characters_collection), \
-             patch('utils.MAX_COUNTERS_PER_CHARACTER', 3):
+
+        with (
+            patch("utils.characters_collection", test_characters_collection),
+            patch("utils.MAX_COUNTERS_PER_CHARACTER", 3),
+        ):
             user_id = "test_user_max_counters"
             character_name = "MaxCountersChar"
             add_user_character(user_id, character_name)
@@ -357,19 +405,21 @@ class TestCounterManagement:
 
     # Test invalid counter type
     def test_invalid_counter_type(self, test_characters_collection):
-        with patch('utils.characters_collection', test_characters_collection):
+        with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_invalid_type"
             character_name = "InvalidTypeChar"
             add_user_character(user_id, character_name)
             character_id = get_character_id_by_user_and_name(user_id, character_name)
-            success, error = add_counter(character_id, "InvalidTypeCounter", 1, counter_type="not_a_type")
+            success, error = add_counter(
+                character_id, "InvalidTypeCounter", 1, counter_type="not_a_type"
+            )
             assert success is False
             assert error is not None
             assert "invalid" in error.lower() or "type" in error.lower()
 
     # Test malformed input (e.g., None or empty counter name)
     def test_malformed_counter_input(self, test_characters_collection):
-        with patch('utils.characters_collection', test_characters_collection):
+        with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_malformed"
             character_name = "MalformedChar"
             add_user_character(user_id, character_name)
@@ -389,27 +439,56 @@ class TestCounterManagement:
 
     # Test perm_is_maximum temp cannot exceed perm on init
     def test_perm_is_maximum_temp_cannot_exceed_perm_on_init(self):
-        c = Counter("Test", 6, 5, "general", counter_type=CounterTypeEnum.perm_is_maximum.value)
+        c = Counter(
+            "Test", 6, 5, "general", counter_type=CounterTypeEnum.perm_is_maximum.value
+        )
         assert c.temp == 5
 
     # Test perm_is_maximum_bedlam temp and bedlam cannot exceed perm on init
     def test_perm_is_maximum_bedlam_temp_and_bedlam_cannot_exceed_perm_on_init(self):
-        c = Counter("Test", 6, 5, "general", bedlam=5, counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value)
+        c = Counter(
+            "Test",
+            6,
+            5,
+            "general",
+            bedlam=5,
+            counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value,
+        )
         assert c.temp == 5 and c.bedlam == 5
         with pytest.raises(ValueError):
-            Counter("Test", 5, 5, "general", bedlam=6, counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value)
-        c = Counter("Test", 5, 5, "general", bedlam=5, counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value)
+            Counter(
+                "Test",
+                5,
+                5,
+                "general",
+                bedlam=6,
+                counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value,
+            )
+        c = Counter(
+            "Test",
+            5,
+            5,
+            "general",
+            bedlam=5,
+            counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value,
+        )
         assert c.temp == 5 and c.bedlam == 5
 
     # Test updating a perm_is_maximum_bedlam counter
     def test_update_perm_is_maximum_bedlam_counter(self, test_characters_collection):
         from counter import CounterTypeEnum
-        with patch('utils.characters_collection', test_characters_collection):
+
+        with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_bedlam"
             character_name = "Bedlam Character"
             add_user_character(user_id, character_name)
             character_id = get_character_id_by_user_and_name(user_id, character_name)
-            add_counter(character_id, "BedlamCounter", 2, counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value)
+            add_counter(
+                character_id,
+                "BedlamCounter",
+                2,
+                counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value,
+            )
             success, error = update_counter(character_id, "BedlamCounter", "temp", 10)
             assert success is True
             counters = get_counters_for_character(character_id)
@@ -422,20 +501,36 @@ class TestCounterManagement:
     # Test initializing perm_is_maximum and perm_is_maximum_bedlam with temp > perm
     def test_init_perm_is_maximum_and_bedlam_temp_above_perm(self):
         from counter import Counter, CounterTypeEnum
-        c = Counter("MaxCounterInit", 6, 5, "general", counter_type=CounterTypeEnum.perm_is_maximum.value)
+
+        c = Counter(
+            "MaxCounterInit",
+            6,
+            5,
+            "general",
+            counter_type=CounterTypeEnum.perm_is_maximum.value,
+        )
         assert c.temp == 5
-        c = Counter("BedlamCounterInit", 6, 5, "general", bedlam=2, counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value)
+        c = Counter(
+            "BedlamCounterInit",
+            6,
+            5,
+            "general",
+            bedlam=2,
+            counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value,
+        )
         assert c.temp == 5 and c.bedlam == 2
 
     def test_single_number_counter_temp_and_perm_sync(self, test_characters_collection):
-        with patch('utils.characters_collection', test_characters_collection):
+        with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_single_number"
             character_name = "SingleNumberChar"
             add_user_character(user_id, character_name)
             character_id = get_character_id_by_user_and_name(user_id, character_name)
             # Add single_number counter
             counter_name = "SingleNum"
-            success, error = add_counter(character_id, counter_name, 3, counter_type="single_number")
+            success, error = add_counter(
+                character_id, counter_name, 3, counter_type="single_number"
+            )
             assert success is True
             counters = get_counters_for_character(character_id)
             counter = next((c for c in counters if c.counter == counter_name), None)
@@ -464,4 +559,3 @@ class TestCounterManagement:
             counter = next((c for c in counters if c.counter == counter_name), None)
             assert counter.temp == 2
             assert counter.perm == 2
-

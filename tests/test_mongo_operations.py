@@ -2,21 +2,27 @@ import unittest
 from unittest.mock import patch, MagicMock
 
 import utils
-from counter import UserCharacter, Counter
-from health import Health, DamageEnum, HealthTypeEnum, HEALTH_LEVELS, display_health
+from counter import UserCharacter
+from health import HEALTH_LEVELS
 
 from bson import ObjectId
+
 
 # Test MongoDB operations
 class TestMongoOperations(unittest.TestCase):
     def setUp(self):
         # Patch ObjectId locally for this test class
-        self.objectid_patch = patch('bson.ObjectId', lambda oid=None: str(oid) if oid else "507f1f77bcf86cd799439011")
+        self.objectid_patch = patch(
+            "bson.ObjectId",
+            lambda oid=None: str(oid) if oid else "507f1f77bcf86cd799439011",
+        )
         self.objectid_patch.start()
 
         # Create mock collection
         self.mock_collection = MagicMock()
-        self.patch_collection = patch('utils.characters_collection', self.mock_collection)
+        self.patch_collection = patch(
+            "utils.characters_collection", self.mock_collection
+        )
         self.patch_collection.start()
 
     def tearDown(self):
@@ -30,7 +36,9 @@ class TestMongoOperations(unittest.TestCase):
 
         # Test adding a character
         success, error = utils.add_user_character("user123", "Test Character")
-        character_id = utils.get_character_id_by_user_and_name("user123", "Test Character")  # FIXED
+        character_id = utils.get_character_id_by_user_and_name(
+            "user123", "Test Character"
+        )  # FIXED
 
         # Assertions
         self.assertTrue(success)
@@ -53,8 +61,20 @@ class TestMongoOperations(unittest.TestCase):
     def test_get_all_user_characters_for_user(self):
         # Configure mock
         self.mock_collection.find.return_value = [
-            {"_id": "id1", "user": "user123", "character": "Character 1", "counters": [], "health": []},
-            {"_id": "id2", "user": "user123", "character": "Character 2", "counters": [{"counter": "test"}], "health": []}
+            {
+                "_id": "id1",
+                "user": "user123",
+                "character": "Character 1",
+                "counters": [],
+                "health": [],
+            },
+            {
+                "_id": "id2",
+                "user": "user123",
+                "character": "Character 2",
+                "counters": [{"counter": "test"}],
+                "health": [],
+            },
         ]
 
         # Get characters
@@ -69,8 +89,13 @@ class TestMongoOperations(unittest.TestCase):
 
     def test_add_counter(self):
         # Patch the characters_collection with our test collection
-        from utils import add_user_character, get_character_id_by_user_and_name, add_counter
-        with patch('utils.characters_collection', self.mock_collection):
+        from utils import (
+            add_user_character,
+            get_character_id_by_user_and_name,
+            add_counter,
+        )
+
+        with patch("utils.characters_collection", self.mock_collection):
             user_id = "test_user_mongo"
             character_name = "Mongo Character"
             add_user_character(user_id, character_name)
@@ -84,14 +109,16 @@ class TestMongoOperations(unittest.TestCase):
         valid_object_id = ObjectId("507f1f77bcf86cd799439011")
 
         # Ensure character_id is obtained via get_character_id_by_user_and_name
-        character_id = utils.get_character_id_by_user_and_name("user123", "Test Character")
+        character_id = utils.get_character_id_by_user_and_name(
+            "user123", "Test Character"
+        )
 
         # Test adding a counter
         char_doc = {
             "_id": valid_object_id,
             "user": "user123",
             "character": "Test Character",
-            "counters": []
+            "counters": [],
         }
         self.mock_collection.find_one.return_value = char_doc
         self.mock_collection.update_one.reset_mock()  # FIX: Reset call count before assertion
@@ -108,7 +135,10 @@ class TestMongoOperations(unittest.TestCase):
             "_id": valid_object_id,
             "user": "user123",
             "character": "Test Character",
-            "counters": [{"counter": f"Counter {i}"} for i in range(utils.MAX_COUNTERS_PER_CHARACTER)]
+            "counters": [
+                {"counter": f"Counter {i}"}
+                for i in range(utils.MAX_COUNTERS_PER_CHARACTER)
+            ],
         }
         self.mock_collection.find_one.return_value = char_doc_limit
         success, error = utils.add_counter(character_id, "Another Counter", 5)
@@ -120,12 +150,12 @@ class TestMongoOperations(unittest.TestCase):
             "_id": valid_object_id,
             "user": "user123",
             "character": "Test Character",
-            "counters": [{"counter": "Test Counter"}]
+            "counters": [{"counter": "Test Counter"}],
         }
         self.mock_collection.find_one.return_value = char_doc_existing
         success, error = utils.add_counter(character_id, "Test Counter", 5)
         self.assertFalse(success)
-        assert("exists for this character" in error)
+        assert "exists for this character" in error
 
     def test_get_user_character_by_id(self):
         valid_object_id = ObjectId("123456789012345678901234")
@@ -136,7 +166,7 @@ class TestMongoOperations(unittest.TestCase):
             "user": "user123",
             "character": "Test Character",
             "counters": [],
-            "health": []
+            "health": [],
         }
         self.mock_collection.find_one.return_value = char_doc
 
@@ -156,7 +186,7 @@ class TestMongoOperations(unittest.TestCase):
             "user": "user123",
             "character": "Test Character",
             "counters": [],
-            "health": []
+            "health": [],
         }
         self.mock_collection.find_one.return_value = char_doc
 
@@ -183,12 +213,14 @@ class TestMongoOperations(unittest.TestCase):
             "user": "user123",
             "character": "Test Character",
             "counters": [],
-            "health": []
+            "health": [],
         }
         self.mock_collection.find_one.return_value = char_doc
 
         # Ensure character_id is obtained via get_character_id_by_user_and_name
-        character_id = utils.get_character_id_by_user_and_name("user123", "Test Character")  # FIXED
+        character_id = utils.get_character_id_by_user_and_name(
+            "user123", "Test Character"
+        )  # FIXED
 
         # Test adding health
         success, error = utils.add_health(character_id, 100, 50)
@@ -219,7 +251,7 @@ class TestMongoOperations(unittest.TestCase):
             "user": "user123",
             "character": "Test Character",
             "counters": [],
-            "health": [{"level": 100}]
+            "health": [{"level": 100}],
         }
         self.mock_collection.find_one.return_value = char_doc
 
@@ -239,7 +271,7 @@ class TestMongoOperations(unittest.TestCase):
             "user": "user123",
             "character": "Test Character",
             "counters": [],
-            "health": [{"level": 100}]
+            "health": [{"level": 100}],
         }
         self.mock_collection.find_one.return_value = char_doc
 
@@ -258,6 +290,7 @@ class TestMongoOperations(unittest.TestCase):
         success, error = utils.delete_health(valid_object_id, 100)
         self.assertFalse(success)
         self.assertTrue("not found" in error)
+
 
 if __name__ == "__main__":
     unittest.main()
