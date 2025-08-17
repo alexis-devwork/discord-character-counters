@@ -304,7 +304,7 @@ def register_character_commands(cog):
         if (
             target.counter_type == CounterTypeEnum.single_number.value
             and getattr(target, "is_exhaustible", False)
-            and new_value == 0
+            and new_value <= 0
         ):
             from utils import remove_counter
 
@@ -333,6 +333,49 @@ def register_character_commands(cog):
             lambda: _update_counter_in_mongodb(
                 character_id, counter, "perm", target.perm, target
             ),
+        )
+
+    @cog.character_group.command(
+        name="bedlam", description="Set bedlam value for a perm_is_maximum_bedlam counter"
+    )
+    @discord.app_commands.autocomplete(
+        character=character_name_autocomplete,
+        counter=counter_name_autocomplete_for_character,
+    )
+    async def bedlam(
+        interaction: discord.Interaction, character: str, counter: str, new_value: int
+    ):
+        user_id = str(interaction.user.id)
+        character_id = get_character_id_by_user_and_name(user_id, character)
+        if character_id is None:
+            await handle_character_not_found(interaction)
+            return
+
+        counters = get_counters_for_character(character_id)
+        target = _get_bedlam_counter(counters, counter)
+        if not target:
+            await handle_counter_not_found(interaction)
+            return
+
+        # Validate the new bedlam value
+        adjusted_value, is_valid = await _validate_new_bedlam_value(
+            target, new_value, interaction
+        )
+        if not is_valid:
+            return
+
+        # Update the bedlam value
+        target.bedlam = adjusted_value
+        updated_counters = update_counter_in_db(
+            character_id, counter, "bedlam", target.bedlam, target
+        )
+
+        # Generate response message
+        msg = generate_counters_output(updated_counters, fully_unescape)
+        await interaction.response.send_message(
+            f"Bedlam for counter '{counter}' on character '{character}' set to {new_value}.\n"
+            f"Counters for character '{character}':\n{msg}",
+            ephemeral=True,
         )
 
     # Register minus_cmd ONLY in avct_group (not in character_group or edit_group)
