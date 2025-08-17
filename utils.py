@@ -322,6 +322,7 @@ def update_counter(character_id: str, counter_name: str, field: str, delta: int)
     """
     Update a counter's temp or perm value by delta.
     For single_number counters with is_exhaustible, remove if value would be 0.
+    For single_number counters, always set perm to the same value as temp.
     Returns (success, error).
     """
     char_doc = _get_character_by_id(character_id)
@@ -354,7 +355,9 @@ def update_counter(character_id: str, counter_name: str, field: str, delta: int)
                     c["temp"] = min(new_temp, c["perm"])
                 elif counter_type == "single_number":
                     c["temp"] = new_temp
-                    c["perm"] = new_temp
+                    c["perm"] = (
+                        new_temp  # Always set perm to match temp for single_number
+                    )
                 elif counter_type == "perm_is_maximum_bedlam":
                     c["temp"] = min(new_temp, c["perm"])
                 else:
@@ -368,7 +371,9 @@ def update_counter(character_id: str, counter_name: str, field: str, delta: int)
                     c["temp"] = min(c["temp"], new_perm)
                 elif counter_type == "single_number":
                     c["perm"] = new_perm
-                    c["temp"] = new_perm
+                    c["temp"] = (
+                        new_perm  # Always set temp to match perm for single_number
+                    )
                 elif counter_type == "perm_is_maximum_bedlam":
                     c["perm"] = new_perm
                     c["temp"] = min(c["temp"], new_perm)
@@ -876,7 +881,9 @@ def update_counter_in_db(character_id, counter_name, field, value, target=None):
             if target:
                 c["perm"] = target.perm
                 c["temp"] = target.temp
-                c["bedlam"] = target.bedlam  # Ensure bedlam is updated if target is provided
+                c["bedlam"] = (
+                    target.bedlam
+                )  # Ensure bedlam is updated if target is provided
             else:
                 c[field] = value
             counters[idx] = c
