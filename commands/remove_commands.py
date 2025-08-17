@@ -5,6 +5,7 @@ from utils import (
     remove_counter,
     handle_character_not_found,
     handle_invalid_health_type,  # Add this import
+    handle_counter_not_found,  # Add this import
 )
 from utils import CharacterRepository
 from bson import ObjectId

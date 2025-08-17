@@ -11,6 +11,7 @@ from utils import (
     handle_character_not_found,
     handle_counter_not_found,
     update_counter_in_db,  # Add import
+    update_counter_comment,
 )
 from utils import CharacterRepository
 from bson import ObjectId
@@ -260,7 +261,7 @@ def register_edit_commands(cog):
             await handle_character_not_found(interaction)
             return
 
-        success, error = set_counter_comment(character_id, counter, comment)
+        success, error = update_counter_comment(character_id, counter, comment)
 
         if success:
             await interaction.response.send_message(
