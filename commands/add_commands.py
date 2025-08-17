@@ -8,6 +8,8 @@ from utils import (
     PredefinedCounterEnum,
     add_predefined_counter,
     CategoryEnum,
+    display_character_counters,  # Import the display function
+    fully_unescape,
 )
 from utils import characters_collection, CharacterRepository
 from health import Health, HealthTypeEnum, HealthLevelEnum
@@ -86,32 +88,27 @@ def register_add_commands(cog):
         if not character_id:
             return
 
-        # Add counters
-        success, error = add_predefined_counter(
-            character_id, PredefinedCounterEnum.willpower.value, willpower, ""
-        )
-        if not success:
-            await interaction.response.send_message(
-                f"Failed to add willpower counter: {error}", ephemeral=True
+        # Add counters using add_predefined_counter
+        for counter_type, value, label in [
+            (PredefinedCounterEnum.willpower, willpower, "willpower"),
+            (PredefinedCounterEnum.mana, mana, "mana"),
+        ]:
+            success, error = add_predefined_counter(
+                character_id, counter_type.value, value
             )
-            return
-
-        success, error = add_predefined_counter(
-            character_id, PredefinedCounterEnum.mana.value, mana, ""
-        )
-        if not success:
-            await interaction.response.send_message(
-                f"Failed to add mana counter: {error}", ephemeral=True
-            )
-            return
+            if not success:
+                await interaction.response.send_message(
+                    f"Failed to add {label} counter: {error}", ephemeral=True
+                )
+                return
 
         # Add health tracker
         _add_health_tracker(character_id, HealthTypeEnum.normal.value)
 
-        # Send confirmation
-        splat_msg = f" (splat: sorc, willpower: {willpower}, mana: {mana})"
+        # Generate and display the character's counters and health
+        msg = display_character_counters(character_id, fully_unescape)
         await interaction.response.send_message(
-            f"Character '{character}'{splat_msg} added for you.", ephemeral=True
+            f"Character '{character}' added successfully.\n\n{msg}", ephemeral=True
         )
 
     # --- Add character for vampire ---
@@ -135,47 +132,39 @@ def register_add_commands(cog):
         if not character_id:
             return
 
-        # Add counters
-        success, error = add_predefined_counter(
-            character_id, PredefinedCounterEnum.blood_pool.value, blood_pool, ""
-        )
-        if not success:
-            await interaction.response.send_message(
-                f"Failed to add blood_pool counter: {error}", ephemeral=True
+        # Add counters using add_predefined_counter
+        for counter_type, value, label in [
+            (PredefinedCounterEnum.blood_pool, blood_pool, "blood_pool"),
+            (PredefinedCounterEnum.willpower, willpower, "willpower"),
+        ]:
+            success, error = add_predefined_counter(
+                character_id, counter_type.value, value
             )
-            return
-
-        success, error = add_predefined_counter(
-            character_id, PredefinedCounterEnum.willpower.value, willpower, ""
-        )
-        if not success:
-            await interaction.response.send_message(
-                f"Failed to add willpower counter: {error}", ephemeral=True
-            )
-            return
+            if not success:
+                await interaction.response.send_message(
+                    f"Failed to add {label} counter: {error}", ephemeral=True
+                )
+                return
 
         # Add health tracker
         _add_health_tracker(character_id, HealthTypeEnum.normal.value)
 
-        # Send confirmation
-        splat_msg = (
-            f" (splat: vampire, blood_pool: {blood_pool}, willpower: {willpower})"
-        )
+        # Generate and display the character's counters and health
+        msg = display_character_counters(character_id, fully_unescape)
         await interaction.response.send_message(
-            f"Character '{character}'{splat_msg} added for you.", ephemeral=True
+            f"Character '{character}' added successfully.\n\n{msg}", ephemeral=True
         )
 
     # --- Add character for changeling ---
     @cog.add_group.command(
         name="character_changeling",
-        description="Add a Changeling character (requires willpower_fae, glamour, nightmare, banality)",
+        description="Add a Changeling character (requires willpower_fae, glamour, and banality)",
     )
     async def add_character_changeling(
         interaction: discord.Interaction,
         character: str,
         willpower_fae: int,
         glamour: int,
-        nightmare: int,
         banality: int,
     ):
         character = sanitize_string(character)
@@ -188,14 +177,16 @@ def register_add_commands(cog):
         if not character_id:
             return
 
-        # Add counters
-        for enum_val, val, label in [
-            (PredefinedCounterEnum.willpower_fae.value, willpower_fae, "willpower_fae"),
-            (PredefinedCounterEnum.glamour.value, glamour, "glamour"),
-            (PredefinedCounterEnum.nightmare.value, nightmare, "nightmare"),
-            (PredefinedCounterEnum.banality.value, banality, "banality"),
+        # Add counters using add_predefined_counter
+        for counter_type, value, label in [
+            (PredefinedCounterEnum.willpower_fae, willpower_fae, "willpower_fae"),
+            (PredefinedCounterEnum.glamour, glamour, "glamour"),
+            (PredefinedCounterEnum.nightmare, 0, "nightmare"),  # Default nightmare to 0
+            (PredefinedCounterEnum.banality, banality, "banality"),
         ]:
-            success, error = add_predefined_counter(character_id, enum_val, val, "")
+            success, error = add_predefined_counter(
+                character_id, counter_type.value, value
+            )
             if not success:
                 await interaction.response.send_message(
                     f"Failed to add {label} counter: {error}", ephemeral=True
@@ -207,13 +198,10 @@ def register_add_commands(cog):
             character_id, [HealthTypeEnum.normal.value, HealthTypeEnum.chimerical.value]
         )
 
-        # Send confirmation
-        splat_msg = (
-            f" (splat: changeling, willpower_fae: {willpower_fae}, glamour: {glamour}, "
-            f"nightmare: {nightmare}, banality: {banality})"
-        )
+        # Generate and display the character's counters and health
+        msg = display_character_counters(character_id, fully_unescape)
         await interaction.response.send_message(
-            f"Character '{character}'{splat_msg} added for you.", ephemeral=True
+            f"Character '{character}' added successfully.\n\n{msg}", ephemeral=True
         )
 
     # --- Add character for fera ---
@@ -244,13 +232,15 @@ def register_add_commands(cog):
         if not character_id:
             return
 
-        # Add base counters
-        for enum_val, val, label in [
-            (PredefinedCounterEnum.willpower.value, willpower, "willpower"),
-            (PredefinedCounterEnum.gnosis.value, gnosis, "gnosis"),
-            (PredefinedCounterEnum.rage.value, rage, "rage"),
+        # Add base counters using add_predefined_counter
+        for counter_type, value, label in [
+            (PredefinedCounterEnum.willpower, willpower, "willpower"),
+            (PredefinedCounterEnum.gnosis, gnosis, "gnosis"),
+            (PredefinedCounterEnum.rage, rage, "rage"),
         ]:
-            success, error = add_predefined_counter(character_id, enum_val, val, "")
+            success, error = add_predefined_counter(
+                character_id, counter_type.value, value
+            )
             if not success:
                 await interaction.response.send_message(
                     f"Failed to add {label} counter: {error}", ephemeral=True
@@ -258,13 +248,13 @@ def register_add_commands(cog):
                 return
 
         # Add renown counters with possible replacements
-        for enum_val, val, label, override in [
-            (PredefinedCounterEnum.glory.value, glory, "glory", glory_replacement),
-            (PredefinedCounterEnum.honor.value, honor, "honor", honor_replacement),
-            (PredefinedCounterEnum.wisdom.value, wisdom, "wisdom", wisdom_replacement),
+        for counter_type, value, label, override in [
+            (PredefinedCounterEnum.glory, glory, "glory", glory_replacement),
+            (PredefinedCounterEnum.honor, honor, "honor", honor_replacement),
+            (PredefinedCounterEnum.wisdom, wisdom, "wisdom", wisdom_replacement),
         ]:
             success, error = add_predefined_counter(
-                character_id, enum_val, val, "", _get_replacement_value(override)
+                character_id, counter_type.value, value, None, override
             )
             if not success:
                 await interaction.response.send_message(
@@ -275,18 +265,10 @@ def register_add_commands(cog):
         # Add health tracker
         _add_health_tracker(character_id, HealthTypeEnum.normal.value)
 
-        # Generate replacement strings for display
-        replacements = _generate_replacement_strings(
-            glory_replacement, honor_replacement, wisdom_replacement
-        )
-
-        # Send confirmation
-        splat_msg = (
-            f" (splat: fera, willpower: {willpower}, gnosis: {gnosis}, rage: {rage}, "
-            f"glory: {glory}, honor: {honor}, wisdom: {wisdom}{replacements})"
-        )
+        # Generate and display the character's counters and health
+        msg = display_character_counters(character_id, fully_unescape)
         await interaction.response.send_message(
-            f"Character '{character}'{splat_msg} added for you.", ephemeral=True
+            f"Character '{character}' added successfully.\n\n{msg}", ephemeral=True
         )
 
     def _generate_replacement_strings(
