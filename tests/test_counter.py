@@ -38,6 +38,24 @@ class TestCounter:
         expected = "Glory\n:stop_button: :stop_button: :stop_button: :stop_button: :stop_button:\n:asterisk: :asterisk:"
         assert display == expected, f"Expected: {expected}, but got: {display}"
 
+        # Test perm_is_maximum counter with temp > perm (should cap temp)
+        counter = Counter(
+            "Willpower", 7, 5, "tempers",
+            counter_type=CounterTypeEnum.perm_is_maximum.value
+        )
+        assert counter.temp == 5
+        display = counter.generate_display_pretty(lambda x: x)
+        expected = "Willpower\n:asterisk: :asterisk: :asterisk: :asterisk: :asterisk:"
+        assert display == expected, f"Expected: {expected}, but got: {display}"
+
+        # Test perm_is_maximum_bedlam counter with temp > perm (should cap temp)
+        counter = Counter(
+            "Willpower", 7, 5, "tempers",
+            counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value,
+            bedlam=2
+        )
+        assert counter.temp == 5
+
 class TestCounterFactory:
 
     def test_create_factory_method(self):

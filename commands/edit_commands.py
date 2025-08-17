@@ -51,6 +51,7 @@ def register_edit_commands(cog):
             return None, False
         if target.counter_type in [CounterTypeEnum.perm_is_maximum.value, CounterTypeEnum.perm_is_maximum_bedlam.value]:
             if value > target.perm:
+                # Just set temp to perm instead of failing
                 return target.perm, True
             else:
                 return value, True
@@ -145,7 +146,23 @@ def register_edit_commands(cog):
                 return
             target.temp = new_value
         elif field == "perm":
-            target = _update_perm_value(target, value)
+            # --- PATCH: Don't raise, just message and skip ---
+            if value < 0:
+                await interaction.response.send_message("Cannot set perm below zero.", ephemeral=True)
+                return
+            # For perm_is_maximum types, check if temp would be greater than perm
+            if target.counter_type in [CounterTypeEnum.perm_is_maximum.value, CounterTypeEnum.perm_is_maximum_bedlam.value]:
+                if target.temp > value:
+                    await interaction.response.send_message(
+                        "Temp cannot be greater than perm for this counter type. No changes were saved.",
+                        ephemeral=True
+                    )
+                    return
+            target.perm = value
+            # For perm_is_maximum types, adjust temp if perm is lowered below temp
+            if target.counter_type in [CounterTypeEnum.perm_is_maximum.value, CounterTypeEnum.perm_is_maximum_bedlam.value]:
+                if target.temp > target.perm:
+                    target.temp = target.perm
 
         # Update in MongoDB
         counters = _update_counter_in_mongodb(character_id, counter, target)
