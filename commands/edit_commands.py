@@ -355,7 +355,7 @@ def register_edit_commands(cog):
         if success:
             await interaction.response.send_message(
                 f"Counter '{counter}' renamed to '{new_name}' for character '{character}'.",
-                ephemeral=True
+                ephemeral=True,
             )
         else:
             await interaction.response.send_message(

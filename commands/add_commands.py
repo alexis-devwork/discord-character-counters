@@ -332,6 +332,7 @@ def register_add_commands(cog):
             if success:
                 # Show updated display after adding
                 from utils import display_character_counters, fully_unescape
+
                 msg = display_character_counters(character_id, fully_unescape)
                 await interaction.response.send_message(
                     f"Remove_When_Exhausted counter '{item_or_project_name}' added to character '{character}'.\n\n{msg}",
@@ -365,6 +366,7 @@ def register_add_commands(cog):
             if success:
                 # Show updated display after adding
                 from utils import display_character_counters, fully_unescape
+
                 msg = display_character_counters(character_id, fully_unescape)
                 await interaction.response.send_message(
                     f"Reset_Eligible counter '{item_or_project_name}' added to character '{character}'.\n\n{msg}",
@@ -423,15 +425,12 @@ def register_add_commands(cog):
 
     # --- Add health command ---
     @cog.add_group.command(
-        name="health",
-        description="Add a health tracker or extra health level to a character",
+        name="health_tracker",
+        description="Add a health tracker to a character (normal or chimerical)",
     )
-    @app_commands.autocomplete(
-        character=character_name_autocomplete,
-        health_level_type=health_level_type_autocomplete,
-    )
-    async def add_health_cmd(
-        interaction: discord.Interaction, character: str, health_level_type: str = None
+    @app_commands.autocomplete(character=character_name_autocomplete)
+    async def add_health_tracker_cmd(
+        interaction: discord.Interaction, character: str, chimerical: bool = False
     ):
         character = sanitize_string(character)
         user_id = str(interaction.user.id)
@@ -452,76 +451,31 @@ def register_add_commands(cog):
 
         health_list = char_doc.get("health", [])
 
-        # If health trackers exist, add health level to all if requested
-        if health_list and health_level_type:
-            valid_levels = [e.value for e in HealthLevelEnum]
-            if health_level_type not in valid_levels:
-                await interaction.response.send_message(
-                    f"Invalid health level type. Choose from: {', '.join(valid_levels)}.",
-                    ephemeral=True,
-                )
-                return
-            from utils import add_health_level
+        # Determine health type based on the chimerical flag
+        health_type = (
+            HealthTypeEnum.chimerical.value
+            if chimerical
+            else HealthTypeEnum.normal.value
+        )
 
-            updated = False
-            for tracker in health_list:
-                success, error = add_health_level(
-                    character_id, tracker.get("health_type"), health_level_type
-                )
-                if success:
-                    levels = tracker.get("health_levels", [])
-                    levels.append(health_level_type)
-                    enum_order = [e.value for e in HealthLevelEnum]
-                    tracker["health_levels"] = sorted(
-                        levels,
-                        key=lambda x: enum_order.index(x)
-                        if x in enum_order
-                        else len(enum_order),
-                    )
-                    updated = True
-                else:
-                    await interaction.response.send_message(
-                        f"Failed to add health level to {tracker.get('health_type')}: {error}",
-                        ephemeral=True,
-                    )
-                    return
-            if updated:
-                CharacterRepository.update_one(
-                    {"_id": ObjectId(character_id)}, {"$set": {"health": health_list}}
-                )
-                await interaction.response.send_message(
-                    f"Added health level '{health_level_type}' to all health trackers for character '{character}'.",
-                    ephemeral=True,
-                )
-            return
-        elif health_list:
+        # Check if the tracker already exists
+        if any(h.get("health_type") == health_type for h in health_list):
             await interaction.response.send_message(
-                "Health tracker(s) already exist for this character.", ephemeral=True
+                f"A {health_type} health tracker already exists for this character.",
+                ephemeral=True,
             )
             return
 
-        # If no tracker exists, add tracker (optionally with a specific health level)
-        valid_levels = [e.value for e in HealthLevelEnum]
-        if health_level_type:
-            if health_level_type not in valid_levels:
-                await interaction.response.send_message(
-                    f"Invalid health level type. Choose from: {', '.join(valid_levels)}.",
-                    ephemeral=True,
-                )
-                return
-            health_obj = Health(
-                health_type=HealthTypeEnum.normal.value,
-                health_levels=[health_level_type],
-            )
-        else:
-            health_obj = Health(health_type=HealthTypeEnum.normal.value)
+        # Add the health tracker
+        health_obj = Health(health_type=health_type)
         health_list.append(health_obj.__dict__)
         CharacterRepository.update_one(
             {"_id": ObjectId(character_id)}, {"$set": {"health": health_list}}
         )
 
         await interaction.response.send_message(
-            f"Health tracker added to character '{character}'.", ephemeral=True
+            f"{health_type.capitalize()} health tracker added to character '{character}'.",
+            ephemeral=True,
         )
 
     # --- Add custom counter ---

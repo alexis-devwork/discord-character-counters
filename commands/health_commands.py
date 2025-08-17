@@ -222,8 +222,12 @@ async def health_level_type_autocomplete(
 
 @register_command("configav_group")
 def register_configav_health_commands(cog):
-    @cog.configav_group.command(
-        name="add_health_level",
+    # Get the existing add group that was created in avct_cog.py
+    add_group = cog.add_group
+
+    # Add the command to configav add health_level
+    @add_group.command(
+        name="health_level",
         description="Add an extra health level to a character's health tracker",
     )
     @discord.app_commands.autocomplete(
