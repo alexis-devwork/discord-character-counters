@@ -75,7 +75,7 @@ def register_remove_commands(cog):
 
     @cog.remove_group.command(
         name="health_tracker",  # Renamed from "health"
-        description="Remove a health tracker from a character by type"
+        description="Remove a health tracker from a character by type",
     )
     @discord.app_commands.autocomplete(
         character=character_name_autocomplete, health_type=health_type_autocomplete

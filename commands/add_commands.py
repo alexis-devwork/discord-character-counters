@@ -332,6 +332,7 @@ def register_add_commands(cog):
             if success:
                 # Show updated display after adding
                 from utils import display_character_counters, fully_unescape
+
                 msg = display_character_counters(character_id, fully_unescape)
                 await interaction.response.send_message(
                     f"Remove_When_Exhausted counter '{item_or_project_name}' added to character '{character}'.\n\n{msg}",

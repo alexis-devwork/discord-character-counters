@@ -270,7 +270,9 @@ def register_configav_health_commands(cog):
             enum_order = [e.value for e in HealthLevelEnum]
             tracker["health_levels"] = sorted(
                 levels,
-                key=lambda x: enum_order.index(x) if x in enum_order else len(enum_order),
+                key=lambda x: enum_order.index(x)
+                if x in enum_order
+                else len(enum_order),
             )
 
             tracker_success, error = add_health_level(
