@@ -74,12 +74,13 @@ def register_remove_commands(cog):
             )
 
     @cog.remove_group.command(
-        name="health", description="Remove a health tracker from a character by type"
+        name="health_tracker",  # Renamed from "health"
+        description="Remove a health tracker from a character by type"
     )
     @discord.app_commands.autocomplete(
         character=character_name_autocomplete, health_type=health_type_autocomplete
     )
-    async def remove_health(
+    async def remove_health_tracker(  # Renamed from remove_health
         interaction: discord.Interaction, character: str, health_type: str
     ):
         user_id = str(interaction.user.id)
