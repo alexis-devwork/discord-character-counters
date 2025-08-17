@@ -61,6 +61,8 @@ The commands are now divided into two main categories:
   Add damage to a health tracker. Defaults to normal health, set `chimerical` to True for chimerical damage.
 - `/avct heal <character> <levels> [chimerical=False]`  
   Heal damage from a health tracker. Defaults to normal health, set `chimerical` to True for chimerical healing.
+- `/avct reset_eligible <character>`  
+  Reset all eligible counters (with `is_resettable=True`) for a character.
 
 ### Configuration Commands (`/configav`)
 #### Character Management
@@ -86,14 +88,20 @@ The commands are now divided into two main categories:
   Add a predefined counter to a character.  
   - For `project_roll` and `item_with_charges`, `name_override` is required.
   - For `glory`, `honor`, `wisdom`, `name_override` can be used to override the counter name.
-- `/configav add customcounter <character> <counter> <temp> <perm> [category] [comment]`  
-  Add a custom counter to a character.
+  - For `Remove_When_Exhausted`, `name_override` is required and counter is removed when value reaches 0.
+  - For `Reset_Eligible`, `name_override` is required; counter can be reset via `/avct reset_eligible`.
+- `/configav add customcounter <character> <counter> <counter_type> <value> [category] [comment] [force_unpretty] [is_resettable] [is_exhaustible] [set_temp_nonzero]`  
+  Add a custom counter to a character.  
+  - `counter_type` can be: `single_number`, `perm_is_maximum`, `perm_is_maximum_bedlam`, `perm_not_maximum`.
+  - Options:  
+    - `force_unpretty`: disables emoji formatting for this counter  
+    - `is_resettable`: enables reset via `/avct reset_eligible`  
+    - `is_exhaustible`: counter is removed when value reaches 0  
+    - `set_temp_nonzero`: for `perm_not_maximum`, sets temp to value instead of 0
 - `/configav add health <character> <health_type>`  
   Add a health tracker (normal or chimerical) to a character. Only one tracker per type per character.
 - `/configav add health_level <character> <health_type> <health_level_name>`  
-  **Add an extra health level to a character's health tracker.**  
-  - Lets you extend the health tracker with custom health levels (e.g., "SuperBruised", "Overkill").
-  - Health levels are displayed in order and can be used for advanced health systems.
+  Add an extra health level to a character's health tracker.
 
 #### Editing Content
 - `/configav edit counter <character> <counter> <field> <value>`  
@@ -114,13 +122,26 @@ The commands are now divided into two main categories:
   Remove a character and all its counters.
 - `/configav remove counter <character> <counter>`  
   Remove a counter from a character.
-
 - `/configav remove health <character> <health_type>`  
   Remove a health tracker from a character.
 
 #### Debugging
 - `/configav debug`  
   Output all properties of all counters and health trackers for all your characters.
+
+#### Counter Options
+- `/configav toggle <character> <toggle> <counter> <value>`  
+  Toggle options for a counter:
+  - `force_unpretty`: disables emoji formatting for this counter
+  - `is_resettable`: enables reset via `/avct reset_eligible`
+  - `is_exhaustible`: counter is removed when value reaches 0
+
+---
+
+## Special Counter Types
+
+- **Remove_When_Exhausted**: Counter is removed automatically when its value reaches 0.
+- **Reset_Eligible**: Counter can be reset to its perm value via `/avct reset_eligible`.
 
 ---
 
@@ -165,6 +186,12 @@ When both normal and chimerical health are present, a header row with 🟦 🇨 
 - **Perm is maximum**: Counter where temp can't exceed perm (used for willpower, etc.)
 - **Perm is maximum with bedlam**: Counter with additional bedlam value (used for changeling willpower)
 - **Perm not maximum**: Counter where temp and perm are tracked separately
+
+### Counter Options
+
+- `force_unpretty`: disables emoji formatting for this counter
+- `is_resettable`: enables reset via `/avct reset_eligible`
+- `is_exhaustible`: counter is removed when value reaches 0
 
 ---
 
@@ -220,4 +247,3 @@ This project includes a comprehensive test suite covering character management, 
 The test suite includes mock objects for Discord interactions, allowing tests to run without an actual Discord connection.
 
 ---
-

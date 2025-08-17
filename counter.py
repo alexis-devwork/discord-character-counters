@@ -23,7 +23,6 @@ class CounterTypeEnum(enum.Enum):
     perm_is_maximum = "perm_is_maximum"
     perm_is_maximum_bedlam = "perm_is_maximum_bedlam"
     perm_not_maximum = "perm_not_maximum"
-    xp = "xp"
     health = "health"
 
 
@@ -52,7 +51,6 @@ class CategoryEnum(enum.Enum):
     items = "items"
     other = "other"
     projects = "projects"
-    xp = "xp"
 
 class Counter:
     def __init__(
@@ -200,7 +198,7 @@ class Counter:
                 pretty = f"{pretty}\n-# {self.comment}"
         # Default case for other counter types
         elif self.counter_type == CounterTypeEnum.single_number.value:
-            negative_marks = " ".join([":asterisk:"] * self.temp)
+            negative_marks = " ".join([":large_blue_diamond:"] * self.temp)
             pretty = f"{counter_name}\n{negative_marks}"
         else:
             pretty = self.generate_display(fully_unescape_func, False)

@@ -5,6 +5,7 @@ from bson import ObjectId
 # Import utilities
 import utils
 from utils import add_user_character, get_character_id_by_user_and_name, add_counter, get_counters_for_character
+from utils import CategoryEnum
 
 # Import cog and command modules
 from avct_cog import AvctCog
@@ -183,48 +184,34 @@ class TestCommands:
 
     # Test adding counter without sanitization
     @pytest.mark.asyncio
-    async def test_add_counter_with_sanitization(self, mock_interaction, test_characters_collection):
-        valid_object_id = ObjectId("123456789012345678901234")  # Use valid ObjectId
-
-        with patch('utils.characters_collection', test_characters_collection), \
-             patch('utils.get_character_id_by_user_and_name', return_value=str(valid_object_id)):
-
-            user_id = str(mock_interaction.user.id)
-            character_name = "Test Character"
-            counter_name = "Test Counter"
-            counter_type = "single_number"
-
+    async def test_add_counter_with_sanitization(self, test_characters_collection):
+        # Patch the characters_collection with our test collection
+        with patch('utils.characters_collection', test_characters_collection):
+            user_id = "test_user_add_counter"
+            character_name = "Add Counter Character"
             add_user_character(user_id, character_name)
             character_id = get_character_id_by_user_and_name(user_id, character_name)
 
-            test_characters_collection.find_one.return_value = {
-                "_id": valid_object_id,
-                "user": user_id,
-                "character": character_name,
-                "counters": [{"counter": counter_name, "temp": 5, "perm": 10, "category": "general", "comment": "", "counter_type": counter_type}]
-            }
+            # Add a counter with all keyword arguments (should not error)
+            success, error = add_counter(
+                character_id,
+                "CounterName",
+                5,
+                category=CategoryEnum.general.value,
+                comment="Test comment",
+                counter_type="single_number",
+                force_unpretty=True
+            )
+            assert success is True
+            assert error is None
 
-            def mock_get_counters(char_id):
-                return [{"counter": counter_name, "temp": 5, "perm": 10, "category": "general", "comment": "", "counter_type": counter_type}]
-
-            with patch('utils.get_counters_for_character', mock_get_counters):
-                async def mock_add_counter(interaction, character_name, counter_name, temp_val, perm_val, category="general", comment="", counter_type="single_number"):
-                    character_id = utils.get_character_id_by_user_and_name(str(interaction.user.id), character_name)
-                    if not character_id:
-                        await interaction.response.send_message(f"Character not found: {character_name}")
-                        return
-                    success, error = add_counter(str(character_id), counter_name, temp_val, perm_val, category, comment, counter_type)
-                    if success:
-                        await interaction.response.send_message(f"Added counter {counter_name}")
-                    else:
-                        await interaction.response.send_message(f"Error: {error}")
-
-                await mock_add_counter(mock_interaction, character_name, counter_name, 5, 10, counter_type=counter_type)
-
-                mock_interaction.response.send_message.assert_called_once()
-                counters = utils.get_counters_for_character(str(valid_object_id))
-                counter = next((c for c in counters if c["counter"] == counter_name), None)
-                assert counter is not None, f"Counter with name '{counter_name}' not found"
-                assert counter["temp"] == 5
-                assert counter["perm"] == 10
-                assert counter["counter_type"] == counter_type
+            # Check if the counter was added correctly
+            counters = utils.get_counters_for_character(str(character_id))
+            # FIX: Counter objects, not dicts
+            counter = next((c for c in counters if getattr(c, "counter", None) == "CounterName"), None)
+            assert counter is not None
+            assert counter.temp == 5
+            assert counter.perm == 5
+            assert counter.category == CategoryEnum.general.value
+            assert counter.comment == "Test comment"
+            assert counter.counter_type == "single_number"

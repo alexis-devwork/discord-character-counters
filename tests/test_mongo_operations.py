@@ -68,6 +68,19 @@ class TestMongoOperations(unittest.TestCase):
         self.assertEqual(len(characters[1].counters), 1)
 
     def test_add_counter(self):
+        # Patch the characters_collection with our test collection
+        from utils import add_user_character, get_character_id_by_user_and_name, add_counter
+        with patch('utils.characters_collection', self.mock_collection):
+            user_id = "test_user_mongo"
+            character_name = "Mongo Character"
+            add_user_character(user_id, character_name)
+            character_id = get_character_id_by_user_and_name(user_id, character_name)
+
+            # Add a counter with correct signature
+            success, error = add_counter(character_id, "MongoCounter", 5)
+            assert success is True
+            assert error is None
+
         valid_object_id = ObjectId("507f1f77bcf86cd799439011")
 
         # Ensure character_id is obtained via get_character_id_by_user_and_name
@@ -81,7 +94,8 @@ class TestMongoOperations(unittest.TestCase):
             "counters": []
         }
         self.mock_collection.find_one.return_value = char_doc
-        success, error = utils.add_counter(character_id, "Test Counter", 5, 10)
+        self.mock_collection.update_one.reset_mock()  # FIX: Reset call count before assertion
+        success, error = utils.add_counter(character_id, "Test Counter", 5)
         self.assertTrue(success)
         self.assertIsNone(error)
         self.mock_collection.update_one.assert_called_once()
@@ -97,7 +111,7 @@ class TestMongoOperations(unittest.TestCase):
             "counters": [{"counter": f"Counter {i}"} for i in range(utils.MAX_COUNTERS_PER_CHARACTER)]
         }
         self.mock_collection.find_one.return_value = char_doc_limit
-        success, error = utils.add_counter(character_id, "Another Counter", 5, 10)
+        success, error = utils.add_counter(character_id, "Another Counter", 5)
         self.assertFalse(success)
         self.assertTrue("maximum number" in error)
 
@@ -109,7 +123,7 @@ class TestMongoOperations(unittest.TestCase):
             "counters": [{"counter": "Test Counter"}]
         }
         self.mock_collection.find_one.return_value = char_doc_existing
-        success, error = utils.add_counter(character_id, "Test Counter", 5, 10)
+        success, error = utils.add_counter(character_id, "Test Counter", 5)
         self.assertFalse(success)
         assert("exists for this character" in error)
 

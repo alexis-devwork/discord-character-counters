@@ -294,9 +294,7 @@ def register_add_commands(cog):
         counter_type: str,
         value: int = None,
         comment: str = None,
-        name_override: str = None,
-        temp: int = None,
-        perm: int = None
+        name_override: str = None
     ):
         character = sanitize_string(character)
         user_id = str(interaction.user.id)
@@ -315,7 +313,6 @@ def register_add_commands(cog):
                 character_id,
                 name_override,
                 value if value is not None else 0,
-                value if value is not None else 0,
                 category="other",
                 comment=comment,
                 counter_type="single_number",
@@ -333,16 +330,12 @@ def register_add_commands(cog):
             if not name_override:
                 await interaction.response.send_message("You must specify a counter name for Reset_Eligible.", ephemeral=True)
                 return
-            if temp is None or perm is None:
-                await interaction.response.send_message("You must specify both temp and perm for Reset_Eligible.", ephemeral=True)
-                return
             from utils import add_counter
             success, error = add_counter(
                 character_id,
                 name_override,
-                temp,
-                perm,
-                category="general",
+                value if value is not None else 0,
+                category="other",
                 comment=comment,
                 counter_type="perm_is_maximum",
                 is_resettable=True
@@ -490,45 +483,68 @@ def register_add_commands(cog):
     @cog.add_group.command(name="customcounter", description="Add a custom counter to a character")
     @app_commands.autocomplete(
         character=character_name_autocomplete,
-        category=category_autocomplete,
-        counter_type=counter_type_autocomplete  # Add autocomplete for counter_type
+        counter_type=counter_type_autocomplete,
+        category=category_autocomplete
     )
-    async def add_customcounter_cmd(
+    async def add_custom_counter_cmd(
         interaction: discord.Interaction,
         character: str,
-        counter: str,
-        temp: int,
-        perm: int,
+        counter_name: str,
         counter_type: str,
+        value: int,
         category: str = CategoryEnum.general.value,
-        comment: str = None
+        comment: str = None,
+        force_unpretty: bool = False,
+        is_resettable: bool = None,
+        is_exhaustible: bool = None,
+        set_temp_nonzero: bool = False
     ):
         character = sanitize_string(character)
+        counter_name = sanitize_string(counter_name)
         user_id = str(interaction.user.id)
         character_id = get_character_id_by_user_and_name(user_id, character)
         if character_id is None:
             await interaction.response.send_message("Character not found for this user.", ephemeral=True)
             return
 
-        # Sanitize inputs
-        counter = sanitize_string(counter)
-        category = sanitize_string(category)
-        if comment:
-            comment = sanitize_string(comment)
-
-        # If type is single_number and temp != perm, use perm for both and notify user
-        output_note = ""
-        if counter_type == CounterTypeEnum.single_number.value and temp != perm:
-            temp = perm
-            output_note = "Single number, using specified value of perm and ignoring temp. "
+        # Logic for temp/perm/bedlam based on type and set_temp_nonzero
+        temp, perm, bedlam = None, None, None
+        if counter_type == CounterTypeEnum.single_number.value:
+            temp = value
+            perm = value
+        elif counter_type == CounterTypeEnum.perm_is_maximum.value:
+            temp = value
+            perm = value
+        elif counter_type == CounterTypeEnum.perm_is_maximum_bedlam.value:
+            temp = value
+            perm = value
+            bedlam = 0
+        elif counter_type == CounterTypeEnum.perm_not_maximum.value:
+            if set_temp_nonzero:
+                temp = value
+            else:
+                temp = 0
+            perm = value
+        else:
+            temp = 0
+            perm = value
 
         # Add the counter
-        success, error = add_counter(character_id, counter, temp, perm, category, comment, counter_type)
-
-        # Handle result
+        from utils import add_counter
+        success, error = add_counter(
+            character_id,
+            counter_name,
+            value,
+            category=category,
+            comment=comment,
+            counter_type=counter_type,
+            force_unpretty=force_unpretty,
+            is_resettable=is_resettable,
+            is_exhaustible=is_exhaustible
+        )
         if success:
             await interaction.response.send_message(
-                f"{output_note}Counter '{counter}' added to character '{character}'.", ephemeral=True)
+                f"Custom counter '{counter_name}' added to character '{character}'.", ephemeral=True)
         else:
             await interaction.response.send_message(error or "Failed to add counter.", ephemeral=True)
 

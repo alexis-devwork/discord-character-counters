@@ -31,13 +31,12 @@ class TestCounterManagement:
 
             # Add a custom counter with explicit counter_type
             counter_name = "Test Counter"
-            temp = 5
-            perm = 10
+            value = 5
             category = CategoryEnum.general.value
             comment = "Test comment"
             counter_type = "single_number"
 
-            success, error = add_counter(character_id, counter_name, temp, perm, category, comment, counter_type)
+            success, error = add_counter(character_id, counter_name, value, category=category, comment=comment, counter_type=counter_type)
 
             # Verify counter was added
             assert success is True
@@ -46,9 +45,9 @@ class TestCounterManagement:
             counters = get_counters_for_character(character_id)
             counter = next((c for c in counters if c.counter == counter_name), None)
             assert counter is not None
-            # For single_number, both temp and perm should be set to temp value
-            assert counter.temp == temp
-            assert counter.perm == temp
+            # For single_number, both temp and perm should be set to value
+            assert counter.temp == value
+            assert counter.perm == value
             assert counter.category == category
             assert counter.comment == comment
             assert counter.counter_type == counter_type
@@ -56,7 +55,7 @@ class TestCounterManagement:
             # Add a perm_is_maximum counter
             counter_name2 = "Max Counter"
             counter_type2 = "perm_is_maximum"
-            success, error = add_counter(character_id, counter_name2, 2, 4, category, "max test", counter_type2)
+            success, error = add_counter(character_id, counter_name2, 2, category=category, comment="max test", counter_type=counter_type2)
             assert success is True
             counters = get_counters_for_character(character_id)
             counter2 = next((c for c in counters if c.counter == counter_name2), None)
@@ -108,11 +107,11 @@ class TestCounterManagement:
 
             # Add a counter with type perm_is_maximum
             counter_name = "Update Test Counter"
-            temp = 5
+            value = 5
             perm = 10
             counter_type = "perm_is_maximum"
 
-            add_counter(character_id, counter_name, temp, perm, counter_type=counter_type)
+            add_counter(character_id, counter_name, value, counter_type=counter_type)
 
             # Update the counter's temp value (increment within perm)
             delta = 2
@@ -122,7 +121,8 @@ class TestCounterManagement:
             counters = get_counters_for_character(character_id)
             counter = next((c for c in counters if c.counter == counter_name), None)
             assert counter is not None
-            assert counter.temp == temp + delta
+            # FIX: temp should be capped at perm (which is 5), not value + delta
+            assert counter.temp == min(value + delta, counter.perm)
 
             # Test incrementing temp above perm (should set temp to perm)
             delta = 20
@@ -131,7 +131,8 @@ class TestCounterManagement:
             assert error is None
             counters = get_counters_for_character(character_id)
             counter = next((c for c in counters if c.counter == counter_name), None)
-            assert counter.temp == perm  # Should not exceed perm
+            # Since perm was set to 5, temp should not exceed 5
+            assert counter.temp == 5
 
             # Test decrementing temp below zero (should fail and not change temp)
             delta = -20
@@ -141,7 +142,7 @@ class TestCounterManagement:
             assert "cannot be below zero" in error
             counters = get_counters_for_character(character_id)
             counter = next((c for c in counters if c.counter == counter_name), None)
-            assert counter.temp == perm  # Should remain unchanged
+            assert counter.temp == 5  # Should remain unchanged
 
     # Test removing a counter
     def test_remove_counter(self, test_characters_collection):
@@ -156,7 +157,7 @@ class TestCounterManagement:
 
             # Add a counter
             counter_name = "Counter to Remove"
-            add_counter(character_id, counter_name, 5, 10)
+            add_counter(character_id, counter_name, 5)
 
             # Verify counter exists
             counters = get_counters_for_character(character_id)
@@ -186,19 +187,19 @@ class TestCounterManagement:
 
             # Add a counter with HTML in the name
             counter_name = "<script>alert('XSS')</script>Counter"
-            success, error = add_counter(character_id, counter_name, 5, 10)
+            success, error = add_counter(character_id, counter_name, 5)
             assert success is False
             assert "alphanumeric characters, spaces, and underscores" in error
 
             # Add a counter with control characters
             counter_name_with_controls = "Bad\x00Counter\x1FName"
-            success, error = add_counter(character_id, counter_name_with_controls, 5, 10)
+            success, error = add_counter(character_id, counter_name_with_controls, 5)
             assert success is False
             assert "alphanumeric characters, spaces, and underscores" in error
 
             # Add a counter with spaces (should succeed)
             counter_name_with_spaces = "Good Counter Name"
-            success, error = add_counter(character_id, counter_name_with_spaces, 5, 10)
+            success, error = add_counter(character_id, counter_name_with_spaces, 5)
             assert success is True
             assert error is None
 
@@ -206,7 +207,7 @@ class TestCounterManagement:
             counter_name = "CommentTest"
             comment = "<b>Important</b> note with control chars\x00\x1F"
             sanitized_comment = "&lt;b&gt;Important&lt;/b&gt; note with control chars"
-            success, error = add_counter(character_id, counter_name, 5, 10, CategoryEnum.general.value, comment)
+            success, error = add_counter(character_id, counter_name, 5, category=CategoryEnum.general.value, comment=comment)
             assert success is True
             assert error is None
             counters = get_counters_for_character(character_id)
@@ -227,14 +228,14 @@ class TestCounterManagement:
 
             # Add first counter
             first_counter_name = "Unique Counter"
-            success, error = add_counter(character_id, first_counter_name, 5, 10)
+            success, error = add_counter(character_id, first_counter_name, 5)
 
             # Verify first counter was added
             assert success is True
             assert error is None
 
             # Try to add another counter with the same name
-            success, error = add_counter(character_id, first_counter_name, 3, 8)
+            success, error = add_counter(character_id, first_counter_name, 3)
 
             # Verify it fails due to duplicate name
             assert success is False  # Fix assertion
@@ -242,7 +243,7 @@ class TestCounterManagement:
             assert "A counter with that name exists" in error
 
             # Try to add a counter with the same name but different case
-            success, error = add_counter(character_id, first_counter_name.upper(), 3, 8)
+            success, error = add_counter(character_id, first_counter_name.upper(), 3)
 
             # This should also fail (case-insensitive comparison)
             assert success is False  # Fix assertion
@@ -262,8 +263,8 @@ class TestCounterManagement:
             character_id = get_character_id_by_user_and_name(user_id, character_name)
 
             # Add two counters
-            add_counter(character_id, "CounterOne", 5, 10)
-            add_counter(character_id, "CounterTwo", 3, 8)
+            add_counter(character_id, "CounterOne", 5)
+            add_counter(character_id, "CounterTwo", 3)
 
             # Try to rename "CounterOne" to "CounterTwo"
             success, error = rename_counter(character_id, "CounterOne", "CounterTwo")
@@ -302,7 +303,7 @@ class TestCounterManagement:
             character_name = "Update CatComment"
             add_user_character(user_id, character_name)
             character_id = get_character_id_by_user_and_name(user_id, character_name)
-            add_counter(character_id, "CounterCat", 1, 2, "general", "Initial comment")
+            add_counter(character_id, "CounterCat", 1, category="general", comment="Initial comment")
             # Update category
             success, error = set_counter_category(character_id, "CounterCat", "tempers")
             assert success is True
@@ -326,7 +327,7 @@ class TestCounterManagement:
             character_name = "Display Character"
             add_user_character(user_id, character_name)
             character_id = get_character_id_by_user_and_name(user_id, character_name)
-            add_counter(character_id, "DisplayCounter", 2, 5, counter_type=CounterTypeEnum.perm_is_maximum.value)
+            add_counter(character_id, "DisplayCounter", 2, counter_type=CounterTypeEnum.perm_is_maximum.value)
             counters = get_counters_for_character(character_id)
             assert len(counters) == 1
             counter = counters[0]
@@ -346,10 +347,10 @@ class TestCounterManagement:
             character_id = get_character_id_by_user_and_name(user_id, character_name)
             # Add up to the limit
             for i in range(3):
-                success, error = add_counter(character_id, f"Counter{i}", 1, 2)
+                success, error = add_counter(character_id, f"Counter{i}", 1)
                 assert success is True
             # Try to add one more
-            success, error = add_counter(character_id, "Counter4", 1, 2)
+            success, error = add_counter(character_id, "Counter4", 1)
             assert success is False
             assert error is not None
             assert "maximum" in error.lower()
@@ -361,7 +362,7 @@ class TestCounterManagement:
             character_name = "InvalidTypeChar"
             add_user_character(user_id, character_name)
             character_id = get_character_id_by_user_and_name(user_id, character_name)
-            success, error = add_counter(character_id, "InvalidTypeCounter", 1, 2, counter_type="not_a_type")
+            success, error = add_counter(character_id, "InvalidTypeCounter", 1, counter_type="not_a_type")
             assert success is False
             assert error is not None
             assert "invalid" in error.lower() or "type" in error.lower()
@@ -374,33 +375,29 @@ class TestCounterManagement:
             add_user_character(user_id, character_name)
             character_id = get_character_id_by_user_and_name(user_id, character_name)
             # None as counter name
-            success, error = add_counter(character_id, None, 1, 2)
+            success, error = add_counter(character_id, None, 1)
             assert success is False
             assert error is not None
             # Empty string as counter name
-            success, error = add_counter(character_id, "", 1, 2)
+            success, error = add_counter(character_id, "", 1)
             assert success is False
             assert error is not None
             # Whitespace only
-            success, error = add_counter(character_id, "   ", 1, 2)
+            success, error = add_counter(character_id, "   ", 1)
             assert success is False
             assert error is not None
 
     # Test perm_is_maximum temp cannot exceed perm on init
     def test_perm_is_maximum_temp_cannot_exceed_perm_on_init(self):
-        # Should set temp to perm, not raise
         c = Counter("Test", 6, 5, "general", counter_type=CounterTypeEnum.perm_is_maximum.value)
         assert c.temp == 5
 
     # Test perm_is_maximum_bedlam temp and bedlam cannot exceed perm on init
     def test_perm_is_maximum_bedlam_temp_and_bedlam_cannot_exceed_perm_on_init(self):
-        # temp > perm should set temp to perm, not raise
         c = Counter("Test", 6, 5, "general", bedlam=5, counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value)
         assert c.temp == 5 and c.bedlam == 5
-        # bedlam > perm should still raise
         with pytest.raises(ValueError):
             Counter("Test", 5, 5, "general", bedlam=6, counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value)
-        # both valid
         c = Counter("Test", 5, 5, "general", bedlam=5, counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value)
         assert c.temp == 5 and c.bedlam == 5
 
@@ -412,15 +409,12 @@ class TestCounterManagement:
             character_name = "Bedlam Character"
             add_user_character(user_id, character_name)
             character_id = get_character_id_by_user_and_name(user_id, character_name)
-            # Add perm_is_maximum_bedlam counter
-            add_counter(character_id, "BedlamCounter", 2, 5, counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value)
-            # Update temp above perm (should cap at perm)
+            add_counter(character_id, "BedlamCounter", 2, counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value)
             success, error = update_counter(character_id, "BedlamCounter", "temp", 10)
             assert success is True
             counters = get_counters_for_character(character_id)
             counter = next((c for c in counters if c.counter == "BedlamCounter"), None)
             assert counter.temp == counter.perm
-            # Update temp below zero (should fail)
             success, error = update_counter(character_id, "BedlamCounter", "temp", -20)
             assert not success
             assert "below zero" in error
@@ -428,10 +422,8 @@ class TestCounterManagement:
     # Test initializing perm_is_maximum and perm_is_maximum_bedlam with temp > perm
     def test_init_perm_is_maximum_and_bedlam_temp_above_perm(self):
         from counter import Counter, CounterTypeEnum
-        # perm_is_maximum: should set temp to perm, not raise
         c = Counter("MaxCounterInit", 6, 5, "general", counter_type=CounterTypeEnum.perm_is_maximum.value)
         assert c.temp == 5
-        # perm_is_maximum_bedlam: should set temp to perm, not raise
         c = Counter("BedlamCounterInit", 6, 5, "general", bedlam=2, counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value)
         assert c.temp == 5 and c.bedlam == 2
 
@@ -443,7 +435,7 @@ class TestCounterManagement:
             character_id = get_character_id_by_user_and_name(user_id, character_name)
             # Add single_number counter
             counter_name = "SingleNum"
-            success, error = add_counter(character_id, counter_name, 3, 5, counter_type="single_number")
+            success, error = add_counter(character_id, counter_name, 3, counter_type="single_number")
             assert success is True
             counters = get_counters_for_character(character_id)
             counter = next((c for c in counters if c.counter == counter_name), None)

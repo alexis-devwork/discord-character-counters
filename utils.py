@@ -177,8 +177,8 @@ def get_counters_for_character(character_id: str):
 def add_counter(
     character_id: str,
     counter_name: str,
-    temp: int,
-    perm: int,
+    value: int,
+    *,
     category: str = CategoryEnum.general.value,
     comment: str = None,
     counter_type: str = CounterTypeEnum.single_number.value,
@@ -187,16 +187,14 @@ def add_counter(
     is_exhaustible: bool = None
 ):
     # Prevent empty or whitespace-only counter names
-    if counter_name is None or counter_name.strip() == "":
+    if counter_name is None or str(counter_name).strip() == "":
         return False, "Counter name cannot be empty or whitespace only."
     # Allow alphanumeric, spaces, and underscores
-    if not re.fullmatch(r"[A-Za-z0-9_ ]+", counter_name.strip()):
+    if not re.fullmatch(r"[A-Za-z0-9_ ]+", str(counter_name).strip()):
         return False, "Counter name must only contain alphanumeric characters, spaces, and underscores."
     # Prevent negative values
-    if temp is not None and temp < 0:
-        return False, "Temp value cannot be below zero."
-    if perm is not None and perm < 0:
-        return False, "Perm value cannot be below zero."
+    if value is not None and value < 0:
+        return False, "Value cannot be below zero."
     # Validate counter_type
     valid_types = {ct.value for ct in CounterTypeEnum}
     if counter_type not in valid_types:
@@ -204,24 +202,22 @@ def add_counter(
     # Validate inputs
     try:
         sanitized = sanitize_and_validate_fields({
-            "counter": (counter_name.strip(), MAX_FIELD_LENGTH),
+            "counter": (str(counter_name).strip(), MAX_FIELD_LENGTH),
             "category": (category, MAX_FIELD_LENGTH),
             "comment": (comment, MAX_COMMENT_LENGTH) if comment is not None else ("", MAX_COMMENT_LENGTH)
         })
-        counter_name, category, comment = sanitized["counter"], sanitized["category"], sanitized["comment"]
+        counter_name_sanitized, category_sanitized, comment_sanitized = sanitized["counter"], sanitized["category"], sanitized["comment"]
     except ValueError as ve:
         return False, str(ve)
 
     # --- Robust character lookup: match by both escaped and unescaped name ---
     char_doc = None
     try:
-        # Try ObjectId lookup first
         char_doc = _get_character_by_id(character_id)
     except Exception:
         pass
     if not char_doc:
-        # Try matching by name (escaped/unescaped)
-        character_raw = character_id.strip()
+        character_raw = str(character_id).strip()
         character_escaped = html.escape(character_raw)
         char_doc = CharacterRepository.find_one({"character": character_escaped})
         if not char_doc:
@@ -237,18 +233,37 @@ def add_counter(
         max_counters = getattr(utils, "MAX_COUNTERS_PER_CHARACTER", MAX_COUNTERS_PER_CHARACTER)
         return False, f"This character has reached the maximum number of counters ({max_counters})."
 
-    # Sanitize counter_name before checking for duplicates
-    sanitized_name = sanitize_string(counter_name)
+    sanitized_name = sanitize_string(counter_name_sanitized)
     if any(sanitize_string(c["counter"]).lower() == sanitized_name.lower() for c in counters):
         return False, "A counter with that name exists for this character."
 
-    # For non-max types, allow temp > perm
-    if counter_type not in ["perm_is_maximum", "perm_is_maximum_bedlam"]:
-        pass  # No restriction
+    # Set temp/perm/bedlam according to type and value
+    temp, perm, bedlam = None, None, None
+    if counter_type == CounterTypeEnum.single_number.value:
+        temp = value
+        perm = value
+    elif counter_type == CounterTypeEnum.perm_is_maximum.value:
+        temp = value
+        perm = value
+    elif counter_type == CounterTypeEnum.perm_is_maximum_bedlam.value:
+        temp = value
+        perm = value
+        bedlam = 0
+    elif counter_type == CounterTypeEnum.perm_not_maximum.value:
+        # For rage and banality, temp and perm both set to value
+        if counter_name_sanitized.lower() in ["rage", "banality"]:
+            temp = value
+            perm = value
+        else:
+            temp = 0
+            perm = value
+    else:
+        temp = 0
+        perm = value
 
-    # Create and add the counter
     new_counter = Counter(
-        counter_name, temp, perm, category, comment,
+        counter_name_sanitized, temp, perm, category_sanitized, comment_sanitized,
+        bedlam=bedlam if bedlam is not None else 0,
         counter_type=counter_type,
         force_unpretty=force_unpretty,
         is_resettable=is_resettable,
