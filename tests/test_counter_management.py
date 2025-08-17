@@ -18,7 +18,6 @@ from counter import PredefinedCounterEnum, CategoryEnum, Counter, CounterTypeEnu
 class TestCounterManagement:
     # Test adding a custom counter
     def test_add_custom_counter(self, test_characters_collection):
-
         with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_counter_1"
             character_name = "Counter Test Character"
@@ -75,7 +74,6 @@ class TestCounterManagement:
 
     # Test adding a predefined counter
     def test_add_predefined_counter(self, test_characters_collection):
-
         with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_counter_2"
             character_name = "Predefined Counter Test"
@@ -108,7 +106,6 @@ class TestCounterManagement:
 
     # Test updating a counter
     def test_update_counter(self, test_characters_collection):
-
         with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_counter_3"
             character_name = "Update Counter Test"
@@ -156,7 +153,6 @@ class TestCounterManagement:
 
     # Test removing a counter
     def test_remove_counter(self, test_characters_collection):
-
         with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_counter_4"
             character_name = "Remove Counter Test"
@@ -185,7 +181,6 @@ class TestCounterManagement:
 
     # Test string sanitization when adding a counter
     def test_counter_name_sanitization(self, test_characters_collection):
-
         with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_sanitize"
             character_name = "Sanitization Test"
@@ -231,7 +226,6 @@ class TestCounterManagement:
 
     # Test counter name uniqueness constraint
     def test_counter_name_uniqueness(self, test_characters_collection):
-
         with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_uniqueness"
             character_name = "Uniqueness Test"
@@ -265,7 +259,6 @@ class TestCounterManagement:
 
     # Test renaming counter uniqueness constraint
     def test_rename_counter_uniqueness(self, test_characters_collection):
-
         with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_rename_uniqueness"
             character_name = "Rename Uniqueness Test"
@@ -376,7 +369,6 @@ class TestCounterManagement:
 
     # Test maximum allowed counters per character
     def test_maximum_counters_per_character(self, test_characters_collection):
-
         with (
             patch("utils.characters_collection", test_characters_collection),
             patch("utils.MAX_COUNTERS_PER_CHARACTER", 3),

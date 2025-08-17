@@ -34,7 +34,7 @@ def discover_and_register_commands(cog):
 
     # Dynamically import all modules in the 'commands' package
     for _, modname, _ in pkgutil.iter_modules(commands.__path__):
-        module = importlib.import_module(f"commands.{modname}") # noqa
+        module = importlib.import_module(f"commands.{modname}")  # noqa
         # The module should call @register_command, so registry is populated
 
     # Register all commands to their groups

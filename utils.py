@@ -835,7 +835,6 @@ def update_health_in_db(character_id: str, health_type: str, damage):
     return health_list
 
 
-
 def remove_character(user_id: str, character: str):
     """
     Remove a character and all its counters for a user.

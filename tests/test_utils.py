@@ -200,7 +200,6 @@ def test_add_counter_negative_values(fake_characters_collection):
 
 
 def test_update_counter_negative_values(fake_characters_collection):
-
     user_id = "u"
     character = "c"
     add_user_character(user_id, character)

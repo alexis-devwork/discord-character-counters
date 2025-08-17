@@ -1,4 +1,3 @@
-
 # Import health-related functionality
 from health import Health, HealthTypeEnum, DamageEnum, display_health, HEALTH_LEVELS
 from utils import add_health_level
