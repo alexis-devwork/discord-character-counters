@@ -36,6 +36,16 @@ def discover_and_register_commands(cog):
     for group_name, command_func in COMMAND_REGISTRY:
         group = getattr(cog, group_name, None)
         if group:
+            # Remove any commands with duplicate names before registering
+            # This prevents discord.app_commands.errors.CommandAlreadyRegistered
+            seen = set()
+            unique_cmds = []
+            for cmd in group.commands:
+                if cmd.name not in seen:
+                    unique_cmds.append(cmd)
+                    seen.add(cmd.name)
+            group.commands.clear()
+            group.commands.extend(unique_cmds)
             command_func(cog)  # Pass cog as positional argument
 
 class AvctCog(commands.Cog):
@@ -53,10 +63,13 @@ class AvctCog(commands.Cog):
         self.edit_group = app_commands.Group(name="edit", description="Edit or rename counter/category/comment")
         self.character_group = app_commands.Group(name="character", description="Character related commands")
 
-        # Discover and register all commands
-        discover_and_register_commands(self)
+        # Do NOT register commands here to avoid double registration
+        # discover_and_register_commands(self)  # <-- REMOVE from __init__
 
     async def cog_load(self):
+        # Register all commands to their groups (only once, when cog is loaded)
+        discover_and_register_commands(self)
+
         # Add subgroups to configav group
         self.configav_group.add_command(self.add_group)
         self.configav_group.add_command(self.rename_group)

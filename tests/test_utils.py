@@ -15,6 +15,11 @@ from utils import (
     CounterFactory,
     MAX_COUNTERS_PER_CHARACTER,
     MAX_FIELD_LENGTH,
+    toggle_counter_option,
+    add_user_character,
+    get_counters_for_character,
+    remove_counter,
+    reset_if_eligible,
 )
 from counter import Counter, CounterTypeEnum
 
@@ -315,3 +320,122 @@ def test_add_counter_set_bedlam_below_zero(fake_characters_collection):
     from counter import Counter
     with pytest.raises(ValueError):
         Counter("willpower", 1, 1, CategoryEnum.tempers.value, bedlam=-10)
+
+def test_add_counter_force_unpretty_and_toggle(fake_characters_collection):
+    user_id = "u"
+    character = "c"
+    add_user_character(user_id, character)
+    character_id = get_character_id_by_user_and_name(user_id, character)
+    add_counter(character_id, "UnprettyCounter", 1, 1, counter_type="single_number", force_unpretty=True)
+    counters = get_counters_for_character(character_id)
+    counter = next((c for c in counters if c.counter == "UnprettyCounter"), None)
+    assert counter is not None
+    assert counter.force_unpretty is True
+    # Toggle force_unpretty off
+    success, error = toggle_counter_option(character_id, "UnprettyCounter", "force_unpretty", False)
+    assert success is True
+    counters = get_counters_for_character(character_id)
+    counter = next((c for c in counters if c.counter == "UnprettyCounter"), None)
+    assert counter.force_unpretty is False
+
+def test_add_counter_is_resettable_and_toggle(fake_characters_collection):
+    user_id = "u"
+    character = "c"
+    add_user_character(user_id, character)
+    character_id = get_character_id_by_user_and_name(user_id, character)
+    add_counter(character_id, "ResettableCounter", 1, 2, counter_type="perm_is_maximum", is_resettable=True)
+    counters = get_counters_for_character(character_id)
+    counter = next((c for c in counters if c.counter == "ResettableCounter"), None)
+    assert counter is not None
+    assert counter.is_resettable is True
+    # Toggle is_resettable off
+    success, error = toggle_counter_option(character_id, "ResettableCounter", "is_resettable", False)
+    assert success is True
+    counters = get_counters_for_character(character_id)
+    counter = next((c for c in counters if c.counter == "ResettableCounter"), None)
+    assert counter.is_resettable is False
+
+def test_add_counter_is_exhaustible_and_toggle(fake_characters_collection):
+    user_id = "u"
+    character = "c"
+    add_user_character(user_id, character)
+    character_id = get_character_id_by_user_and_name(user_id, character)
+    add_counter(character_id, "ExhaustibleCounter", 1, 1, counter_type="single_number", is_exhaustible=True)
+    counters = get_counters_for_character(character_id)
+    counter = next((c for c in counters if c.counter == "ExhaustibleCounter"), None)
+    assert counter is not None
+    assert counter.is_exhaustible is True
+    # Toggle is_exhaustible off
+    success, error = toggle_counter_option(character_id, "ExhaustibleCounter", "is_exhaustible", False)
+    assert success is True
+    counters = get_counters_for_character(character_id)
+    counter = next((c for c in counters if c.counter == "ExhaustibleCounter"), None)
+    assert counter.is_exhaustible is False
+
+def test_remove_when_exhausted_counter(fake_characters_collection):
+    user_id = "u"
+    character = "c"
+    add_user_character(user_id, character)
+    character_id = get_character_id_by_user_and_name(user_id, character)
+    add_counter(character_id, "RemoveExhausted", 2, 2, counter_type="single_number", is_exhaustible=True)
+    counters = get_counters_for_character(character_id)
+    counter = next((c for c in counters if c.counter == "RemoveExhausted"), None)
+    assert counter is not None
+    # Set temp to 0, should remove counter
+    update_counter(character_id, "RemoveExhausted", "temp", -2)
+    counters = get_counters_for_character(character_id)
+    assert not any(c.counter == "RemoveExhausted" for c in counters)
+    # Add again and set perm to 0, should remove counter
+    add_counter(character_id, "RemoveExhausted", 2, 2, counter_type="single_number", is_exhaustible=True)
+    update_counter(character_id, "RemoveExhausted", "perm", -2)
+    counters = get_counters_for_character(character_id)
+    assert not any(c.counter == "RemoveExhausted" for c in counters)
+
+def test_reset_eligible_counter_and_reset_if_eligible(fake_characters_collection):
+    user_id = "u"
+    character = "c"
+    add_user_character(user_id, character)
+    character_id = get_character_id_by_user_and_name(user_id, character)
+    add_counter(character_id, "ResetMe", 1, 5, counter_type="perm_is_maximum", is_resettable=True)
+    reset_if_eligible(character_id)
+    counters = get_counters_for_character(character_id)
+    counter = next((c for c in counters if c.counter == "ResetMe"), None)
+    assert counter is not None
+    assert counter.temp == counter.perm
+
+def test_configav_toggle_only_allows_valid_types(fake_characters_collection):
+    user_id = "u"
+    character = "c"
+    add_user_character(user_id, character)
+    character_id = get_character_id_by_user_and_name(user_id, character)
+    add_counter(character_id, "PermMax", 1, 2, counter_type="perm_is_maximum")
+    add_counter(character_id, "SingleNum", 1, 1, counter_type="single_number")
+    # Try to set is_exhaustible on perm_is_maximum (should not set)
+    success, _ = toggle_counter_option(character_id, "PermMax", "is_exhaustible", True)
+    assert not success
+    # Try to set is_resettable on single_number (should not set)
+    success, _ = toggle_counter_option(character_id, "SingleNum", "is_resettable", True)
+    assert not success
+
+def test_add_remove_when_exhausted_and_reset_eligible(fake_characters_collection):
+    user_id = "u"
+    character = "c"
+    add_user_character(user_id, character)
+    character_id = get_character_id_by_user_and_name(user_id, character)
+    # Remove_When_Exhausted
+    add_success, add_error = add_counter(character_id, "RemoveWhenExhausted", 2, 2, counter_type="single_number", is_exhaustible=True, category="other")
+    assert add_success, f"Failed to add Remove_When_Exhausted counter: {add_error}"
+    counters = get_counters_for_character(character_id)
+    c = next((x for x in counters if x.counter == "RemoveWhenExhausted"), None)
+    assert c is not None, "RemoveWhenExhausted counter was not found after adding"
+    assert c.counter_type == "single_number"
+    assert c.is_exhaustible is True
+    assert c.category == "other"
+    # Reset_Eligible
+    add_success, add_error = add_counter(character_id, "ResetEligible", 3, 5, counter_type="perm_is_maximum", is_resettable=True)
+    assert add_success, f"Failed to add ResetEligible counter: {add_error}"
+    counters = get_counters_for_character(character_id)
+    c = next((x for x in counters if x.counter == "ResetEligible"), None)
+    assert c is not None, "ResetEligible counter was not found after adding"
+    assert c.counter_type == "perm_is_maximum"
+    assert c.is_resettable is True

@@ -49,20 +49,26 @@ class TestCharacterManagement:
             user_id = "test_user_sanitize"
             character_name = "<script>alert('XSS')</script>Character"
 
-            # Should fail due to non-alphanumeric characters (except spaces)
+            # Should fail due to non-alphanumeric characters (except spaces and underscores)
             success, error = add_user_character(user_id, character_name)
             assert success is False
-            assert "alphanumeric characters and spaces" in error
+            assert "alphanumeric characters, spaces, and underscores" in error
 
             # Add a character with control characters
             character_name_with_controls = "Bad\x00Character\x1FName"
             success, error = add_user_character(user_id, character_name_with_controls)
             assert success is False
-            assert "alphanumeric characters and spaces" in error
+            assert "alphanumeric characters, spaces, and underscores" in error
 
             # Add a character with spaces (should succeed)
             character_name_with_spaces = "Good Character Name"
             success, error = add_user_character(user_id, character_name_with_spaces)
+            assert success is True
+            assert error is None
+
+            # Add a character with underscores (should succeed)
+            character_name_with_underscores = "Good_Character_Name"
+            success, error = add_user_character(user_id, character_name_with_underscores)
             assert success is True
             assert error is None
 
@@ -160,20 +166,20 @@ class TestCharacterManagement:
 
             # Try with sanitized name - first get the sanitized form
             html_name = "<i>Character Three</i>"
-            # Should fail due to non-alphanumeric characters (except spaces)
+            # Should fail due to non-alphanumeric characters (except spaces and underscores)
             success, error = rename_character(user_id, "Character Two", html_name)
             assert success is False
-            assert "alphanumeric characters and spaces" in error
+            assert "alphanumeric characters, spaces, and underscores" in error
 
             # Try renaming to a name that, when sanitized, would match an existing one
             ampersand_name = "Character & Three"
             success, error = rename_character(user_id, "character two", ampersand_name)
             assert success is False
-            assert "alphanumeric characters and spaces" in error
+            assert "alphanumeric characters, spaces, and underscores" in error
 
-            # Try renaming to a name with spaces (should succeed)
-            spaced_name = "Character Three With Spaces"
-            success, error = rename_character(user_id, "character two", spaced_name)
+            # Try renaming to a name with underscores (should succeed)
+            underscore_name = "Character_Three_With_Underscores"
+            success, error = rename_character(user_id, "character two", underscore_name)
             assert success is True
             assert error is None
 
@@ -181,18 +187,18 @@ class TestCharacterManagement:
             only_spaces = "    "
             success, error = rename_character(user_id, "character two", only_spaces)
             assert success is False
-            # Accept either the "empty" or "alphanumeric characters and spaces" error
+            # Accept either the "empty" or "alphanumeric characters, spaces, and underscores" error
             assert (
                 "empty" in error.lower()
                 or "invalid" in error.lower()
-                or "alphanumeric characters and spaces" in error.lower()
+                or "alphanumeric characters, spaces, and underscores" in error.lower()
             )
 
             # Try renaming to a name with control characters (should fail)
             control_name = "Bad\x00Name"
             success, error = rename_character(user_id, "character two", control_name)
             assert success is False
-            assert "alphanumeric characters and spaces" in error
+            assert "alphanumeric characters, spaces, and underscores" in error
 
     def test_maximum_allowed_characters_per_user(self, test_characters_collection):
         with patch('utils.characters_collection', test_characters_collection), \

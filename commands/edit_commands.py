@@ -148,15 +148,22 @@ def register_edit_commands(cog):
             await handle_counter_not_found(interaction)
             return
 
-        # For single_number_exhaustible, remove if set would set to 0 or less
-        if target.counter_type == CounterTypeEnum.single_number_exhaustible.value and value <= 0:
+        # Remove single_number counter with is_exhaustible if value would be 0
+        if (
+            target.counter_type == CounterTypeEnum.single_number.value
+            and getattr(target, "is_exhaustible", False)
+            and value == 0
+        ):
             from utils import remove_counter
-            remove_success, remove_error, details = remove_counter(character_id, counter)
-            msg = generate_counters_output(get_counters_for_character(character_id), fully_unescape)
-            await interaction.response.send_message(
-                f"Counter '{counter}' was exhausted and removed from character '{character}'.\n\n{msg}",
-                ephemeral=True
-            )
+            success, error, details = remove_counter(character_id, counter)
+            if success:
+                msg = details if details else "No remaining counters."
+                await interaction.response.send_message(
+                    f"Counter '{counter}' was removed from character '{character}' because its value reached 0.\nRemaining counters:\n{msg}",
+                    ephemeral=True
+                )
+            else:
+                await handle_counter_not_found(interaction) if error == "Counter not found." else interaction.response.send_message(error or "Failed to remove counter.", ephemeral=True)
             return
 
         # Update the appropriate field
@@ -333,59 +340,3 @@ def register_edit_commands(cog):
                 await handle_counter_not_found(interaction)
             else:
                 await interaction.response.send_message(error or "Failed to add points to counter.", ephemeral=True)
-
-    @cog.avct_group.command(name="minus", description="Remove points from a counter")
-    @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)
-    async def minus_cmd(
-        interaction: discord.Interaction,
-        character: str,
-        counter: str,
-        points: int = 1
-    ):
-        user_id = str(interaction.user.id)
-        character_id = get_character_id_by_user_and_name(user_id, character)
-        if character_id is None:
-            await handle_character_not_found(interaction)
-            return
-
-        # Get counter
-        counters = get_counters_for_character(character_id)
-        target = _get_counter_by_name(counters, counter)
-        if not target:
-            await handle_counter_not_found(interaction)
-            return
-
-        # For single_number_exhaustible, remove if decrement would set to 0 or less
-        if target.counter_type == CounterTypeEnum.single_number_exhaustible.value and (target.temp - points) <= 0:
-            from utils import remove_counter
-            remove_success, remove_error, details = remove_counter(character_id, counter)
-            msg = _build_full_character_output(character_id)
-            await interaction.response.send_message(
-                f"Counter '{counter}' was exhausted and removed from character '{character}'.\n\n{msg}",
-                ephemeral=True
-            )
-            return
-
-        # If decrement would result in temp < 0, set both temp and perm to zero
-        if (target.temp - points) < 0:
-            target.temp = 0
-            target.perm = 0
-            counters = _update_counter_in_mongodb(character_id, counter, target)
-            msg = _build_full_character_output(character_id)
-            await interaction.response.send_message(
-                f"Removed {points} point(s) from counter '{counter}' on character '{character}'.\n\n"
-                f"{msg}", ephemeral=True)
-            return
-
-        success, error = update_counter(character_id, counter, "temp", -points)
-
-        if success:
-            msg = _build_full_character_output(character_id)
-            await interaction.response.send_message(
-                f"Removed {points} point(s) from counter '{counter}' on character '{character}'.\n\n"
-                f"{msg}", ephemeral=True)
-        else:
-            if error == "Counter not found.":
-                await handle_counter_not_found(interaction)
-            else:
-                await interaction.response.send_message(error or "Failed to remove points from counter.", ephemeral=True)

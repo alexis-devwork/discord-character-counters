@@ -60,7 +60,25 @@ async def category_autocomplete(interaction: discord.Interaction, current: str):
     ][:25]
 
 async def predefined_counter_type_autocomplete(interaction: discord.Interaction, current: str):
-    return enum_autocomplete(PredefinedCounterEnum, current, title_case=True)
+    # Add custom options for Remove_When_Exhausted and Reset_Eligible
+    custom_types = [
+        ("Remove_When_Exhausted", "Remove_When_Exhausted"),
+        ("Reset_Eligible", "Reset_Eligible"),
+    ]
+    enum_choices = [
+        discord.app_commands.Choice(
+            name=e.value.title(),
+            value=e.value
+        )
+        for e in PredefinedCounterEnum
+        if current.lower() in e.value.lower()
+    ]
+    custom_choices = [
+        discord.app_commands.Choice(name=name, value=value)
+        for name, value in custom_types
+        if current.lower() in value.lower() or current.lower() in name.lower()
+    ]
+    return (custom_choices + enum_choices)[:25]
 
 async def counter_name_autocomplete_for_character(interaction: discord.Interaction, current: str):
     return counter_name_autocomplete_helper(interaction, current)
@@ -82,3 +100,27 @@ async def damage_type_autocomplete(interaction: discord.Interaction, current: st
 
 async def counter_type_autocomplete(interaction: discord.Interaction, current: str):
     return enum_autocomplete(CounterTypeEnum, current)
+
+async def toggle_counter_autocomplete(interaction: discord.Interaction, current: str):
+    # Autocomplete counters for toggling options
+    user_id = str(interaction.user.id)
+    character = interaction.namespace.character
+    toggle = getattr(interaction.namespace, "toggle", None)
+    character_id = get_character_id_by_user_and_name(user_id, character)
+    if character_id is None:
+        return []
+    counters = get_counters_for_character(character_id)
+    # Filter by toggle type
+    if toggle == "force_unpretty":
+        filtered = [c.counter for c in counters if current.lower() in c.counter.lower()]
+    elif toggle == "is_resettable":
+        filtered = [c.counter for c in counters if c.counter_type == "perm_is_maximum" and current.lower() in c.counter.lower()]
+    elif toggle == "is_exhaustible":
+        filtered = [c.counter for c in counters if c.counter_type == "single_number" and current.lower() in c.counter.lower()]
+    else:
+        filtered = []
+    unique_counters = list(dict.fromkeys(filtered))
+    return [
+        discord.app_commands.Choice(name=name, value=name)
+        for name in unique_counters
+    ][:25]

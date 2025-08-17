@@ -182,6 +182,25 @@ def register_character_commands(cog):
         if not target:
             await handle_counter_not_found(interaction)
             return
+
+        # Remove single_number counter with is_exhaustible if value would be 0
+        if (
+            target.counter_type == CounterTypeEnum.single_number.value
+            and getattr(target, "is_exhaustible", False)
+            and new_value == 0
+        ):
+            from utils import remove_counter
+            success, error, details = remove_counter(character_id, counter)
+            if success:
+                msg = details if details else "No remaining counters."
+                await interaction.response.send_message(
+                    f"Counter '{counter}' was removed from character '{character}' because its value reached 0.\nRemaining counters:\n{msg}",
+                    ephemeral=True
+                )
+            else:
+                await handle_counter_not_found(interaction) if error == "Counter not found." else interaction.response.send_message(error or "Failed to remove counter.", ephemeral=True)
+            return
+
         await _handle_counter_update(
             interaction, character, counter, target, "temp", new_value,
             lambda: _update_counter_in_mongodb(character_id, counter, "temp", target.temp)
@@ -200,25 +219,126 @@ def register_character_commands(cog):
         if not target:
             await handle_counter_not_found(interaction)
             return
+
+        # Remove single_number counter with is_exhaustible if value would be 0
+        if (
+            target.counter_type == CounterTypeEnum.single_number.value
+            and getattr(target, "is_exhaustible", False)
+            and new_value == 0
+        ):
+            from utils import remove_counter
+            success, error, details = remove_counter(character_id, counter)
+            if success:
+                msg = details if details else "No remaining counters."
+                await interaction.response.send_message(
+                    f"Counter '{counter}' was removed from character '{character}' because its value reached 0.\nRemaining counters:\n{msg}",
+                    ephemeral=True
+                )
+            else:
+                await handle_counter_not_found(interaction) if error == "Counter not found." else interaction.response.send_message(error or "Failed to remove counter.", ephemeral=True)
+            return
+
         await _handle_counter_update(
             interaction, character, counter, target, "perm", new_value,
             lambda: _update_counter_in_mongodb(character_id, counter, "perm", target.perm, target)
         )
 
-    @cog.character_group.command(name="bedlam", description="Set bedlam for a counter (only perm_is_maximum_bedlam counters)")
-    @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=bedlam_counter_autocomplete)
-    async def bedlam(interaction: discord.Interaction, character: str, counter: str, new_value: int):
+    # Register minus_cmd ONLY in avct_group (not in character_group or edit_group)
+    @cog.avct_group.command(name="minus", description="Remove points from a counter")
+    @discord.app_commands.autocomplete(character=character_name_autocomplete, counter=counter_name_autocomplete_for_character)
+    async def minus_cmd(
+        interaction: discord.Interaction,
+        character: str,
+        counter: str,
+        points: int = 1
+    ):
         user_id = str(interaction.user.id)
         character_id = get_character_id_by_user_and_name(user_id, character)
         if character_id is None:
             await handle_character_not_found(interaction)
             return
+
+        # Get counter
         counters = get_counters_for_character(character_id)
-        target = _get_bedlam_counter(counters, counter)
+        target = _get_counter_by_name(counters, counter)
         if not target:
             await handle_counter_not_found(interaction)
             return
-        await _handle_counter_update(
-            interaction, character, counter, target, "bedlam", new_value,
-            lambda: _update_counter_in_mongodb(character_id, counter, "bedlam", target.bedlam)
-        )
+
+        # Remove single_number counter with is_exhaustible if value would be 0 after decrement
+        if (
+            target.counter_type == CounterTypeEnum.single_number.value
+            and getattr(target, "is_exhaustible", False)
+            and (target.temp - points) == 0
+        ):
+            from utils import remove_counter
+            success, error, details = remove_counter(character_id, counter)
+            if success:
+                msg = details if details else "No remaining counters."
+                await interaction.response.send_message(
+                    f"Counter '{counter}' was removed from character '{character}' because its value reached 0.\nRemaining counters:\n{msg}",
+                    ephemeral=True
+                )
+            else:
+                await handle_counter_not_found(interaction) if error == "Counter not found." else interaction.response.send_message(error or "Failed to remove counter.", ephemeral=True)
+            return
+
+        # --- FIX: Handle Reset_Eligible (perm_is_maximum with is_resettable) ---
+        if (
+            target.counter_type == CounterTypeEnum.perm_is_maximum.value
+            and getattr(target, "is_resettable", False)
+        ):
+            # Decrement temp, but do not allow below zero
+            new_temp = max(target.temp - points, 0)
+            target.temp = new_temp
+            # Save to DB
+            from utils import update_counter_in_db
+            counters = update_counter_in_db(character_id, counter, "temp", target.temp, target)
+            msg = generate_counters_output(counters, fully_unescape)
+            await interaction.response.send_message(
+                f"Removed {points} point(s) from counter '{counter}' on character '{character}'.\n"
+                f"Counters for character '{character}':\n{msg}", ephemeral=True
+            )
+            return
+
+        # Default: update temp
+        from utils import update_counter
+        success, error = update_counter(character_id, counter, "temp", -points)
+        if success:
+            msg = generate_counters_output(get_counters_for_character(character_id), fully_unescape)
+            await interaction.response.send_message(
+                f"Removed {points} point(s) from counter '{counter}' on character '{character}'.\n"
+                f"Counters for character '{character}':\n{msg}", ephemeral=True
+            )
+        else:
+            if error == "Counter not found.":
+                await handle_counter_not_found(interaction)
+            else:
+                await interaction.response.send_message(error or "Failed to remove points from counter.", ephemeral=True)
+
+    @cog.avct_group.command(name="reset_eligible", description="Reset all eligible counters for a character")
+    @discord.app_commands.autocomplete(character=character_name_autocomplete)
+    async def reset_eligible_cmd(
+        interaction: discord.Interaction,
+        character: str
+    ):
+        user_id = str(interaction.user.id)
+        character_id = get_character_id_by_user_and_name(user_id, character)
+        if character_id is None:
+            await handle_character_not_found(interaction)
+            return
+
+        from utils import reset_if_eligible, get_counters_for_character, fully_unescape, generate_counters_output
+        reset_count = reset_if_eligible(character_id)
+        counters = get_counters_for_character(character_id)
+        msg = generate_counters_output(counters, fully_unescape)
+        if reset_count > 0:
+            await interaction.response.send_message(
+                f"Reset {reset_count} eligible counters for character '{character}'.\n\n{msg}",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                f"No eligible counters to reset for character '{character}'.\n\n{msg}",
+                ephemeral=True
+            )

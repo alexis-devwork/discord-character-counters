@@ -294,13 +294,64 @@ def register_add_commands(cog):
         counter_type: str,
         value: int = None,
         comment: str = None,
-        name_override: str = None
+        name_override: str = None,
+        temp: int = None,
+        perm: int = None
     ):
         character = sanitize_string(character)
         user_id = str(interaction.user.id)
         character_id = get_character_id_by_user_and_name(user_id, character)
         if character_id is None:
             await interaction.response.send_message("Character not found for this user.", ephemeral=True)
+            return
+
+        # Handle Remove_When_Exhausted special case
+        if counter_type == "Remove_When_Exhausted":
+            if not name_override:
+                await interaction.response.send_message("You must specify a counter name for Remove_When_Exhausted.", ephemeral=True)
+                return
+            from utils import add_counter
+            success, error = add_counter(
+                character_id,
+                name_override,
+                value if value is not None else 0,
+                value if value is not None else 0,
+                category="other",
+                comment=comment,
+                counter_type="single_number",
+                is_exhaustible=True
+            )
+            if success:
+                await interaction.response.send_message(
+                    f"Remove_When_Exhausted counter '{name_override}' added to character '{character}'.", ephemeral=True)
+            else:
+                await interaction.response.send_message(error or "Failed to add counter.", ephemeral=True)
+            return
+
+        # Handle Reset_Eligible special case
+        if counter_type == "Reset_Eligible":
+            if not name_override:
+                await interaction.response.send_message("You must specify a counter name for Reset_Eligible.", ephemeral=True)
+                return
+            if temp is None or perm is None:
+                await interaction.response.send_message("You must specify both temp and perm for Reset_Eligible.", ephemeral=True)
+                return
+            from utils import add_counter
+            success, error = add_counter(
+                character_id,
+                name_override,
+                temp,
+                perm,
+                category="general",
+                comment=comment,
+                counter_type="perm_is_maximum",
+                is_resettable=True
+            )
+            if success:
+                await interaction.response.send_message(
+                    f"Reset_Eligible counter '{name_override}' added to character '{character}'.", ephemeral=True)
+            else:
+                await interaction.response.send_message(error or "Failed to add counter.", ephemeral=True)
             return
 
         # Validate counter type
