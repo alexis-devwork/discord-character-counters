@@ -145,11 +145,11 @@ class Counter:
             spent_pts = self.perm - self.temp
             unspent_bedlam = self.bedlam - spent_pts if spent_pts < self.bedlam else 0
             base = f"{base} (bedlam: {unspent_bedlam}/{self.bedlam})"
-        elif self.counter_type == CounterTypeEnum.single_number:
+        elif self.counter_type == CounterTypeEnum.single_number.value:
             base = f"{fully_unescape_func(self.counter)}:\n{self.temp}"
         # Add comment if present
         if self.comment:
-            base = f"{base}\n-# {self.comment}"
+            base = f"{base}\n-# {fully_unescape_func(self.comment)}"
         return base
 
     def generate_display_pretty(self, fully_unescape_func):
@@ -164,7 +164,7 @@ class Counter:
 
         # Only handle counters with perm <= 15
         if self.perm > 15:
-            pretty = self.generate_display_basic(fully_unescape_func)
+            return self.generate_display_basic(fully_unescape_func)
         # Handle perm_not_maximum type counters
         elif self.counter_type == CounterTypeEnum.perm_not_maximum.value:
             stop_buttons = " ".join([":stop_button:"] * self.perm)
@@ -207,14 +207,17 @@ class Counter:
                     squares.append(":red_square:")
 
             pretty = f"{counter_name}\n{' '.join(squares)}"
-            if self.comment:
-                pretty = f"{pretty}\n-# {self.comment}"
         # Default case for other counter types
         elif self.counter_type == CounterTypeEnum.single_number.value:
             negative_marks = " ".join([":large_blue_diamond:"] * self.temp)
             pretty = f"{counter_name}\n{negative_marks}"
         else:
-            pretty = self.generate_display(fully_unescape_func, False)
+            return self.generate_display(fully_unescape_func, False)
+
+        # Add comment if present (for all counter types)
+        if self.comment:
+            pretty = f"{pretty}\n-# {fully_unescape_func(self.comment)}"
+
         return pretty
 
     def apply_delta(self, field, delta):
