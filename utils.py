@@ -892,6 +892,10 @@ def add_health_level(character_id: str, health_type: str, health_level_type: str
     Returns (success, error).
     Allows adding more health levels of a type already in the list.
     """
+    # Validate health_level_type
+    if health_level_type not in [e.value for e in HealthLevelEnum]:
+        return False, f"Invalid health level type: {health_level_type}"
+
     char_doc = _get_character_by_id(character_id)
     if not char_doc:
         return False, "Character not found."
