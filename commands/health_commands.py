@@ -248,17 +248,6 @@ def register_configav_health_commands(cog):
             await handle_invalid_health_type(interaction)
             return
 
-        # Validate health_level_type using HealthLevelEnum
-        try:
-            hl_enum = HealthLevelEnum(health_level_type)
-        except ValueError:
-            valid_levels = [e.value for e in HealthLevelEnum]
-            await interaction.response.send_message(
-                f"Health level '{health_level_type}' is not valid. Choose from: {', '.join(valid_levels)}.",
-                ephemeral=True,
-            )
-            return
-
         # Add health level
         success, error = add_health_level(character_id, health_type, health_level_type)
         if not success:

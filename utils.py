@@ -400,21 +400,6 @@ def reset_if_eligible(character_id: str):
     return reset_count
 
 
-def update_health_in_db(character_id: str, health_type: str, damage):
-    """
-    Update the health tracker in the database for a given health_type.
-    """
-    char_doc = _get_character_by_id(character_id)
-    health_list = char_doc.get("health", [])
-    for h in health_list:
-        if h.get("health_type") == health_type:
-            h["damage"] = damage
-    CharacterRepository.update_one(
-        {"_id": ObjectId(character_id)}, {"$set": {"health": health_list}}
-    )
-    return health_list
-
-
 def display_character_counters(character_id: str, unescape_func=None):
     """
     Return a formatted string of all counters for a character.
@@ -700,11 +685,6 @@ def add_predefined_counter(
         except ValueError:
             return False, "Invalid predefined counter type."
 
-    # Determine counter name
-    counter_name = name_override if name_override else counter_enum.value
-
-    # For most predefined counters, temp and perm are the same
-    temp = value if value is not None else 0
     perm = value if value is not None else 0
 
     # Use CounterFactory for correct type and structure
@@ -854,105 +834,6 @@ def update_health_in_db(character_id: str, health_type: str, damage):
     )
     return health_list
 
-
-def display_character_counters(character_id: str, unescape_func=None):
-    """
-    Return a formatted string of all counters for a character.
-    """
-    counters = get_counters_for_character(character_id)
-    return generate_counters_output(counters, unescape_func)
-
-
-def generate_counters_output(counters, unescape_func=None):
-    """
-    Generate a pretty formatted string for displaying counters grouped by category,
-    with each category name in bold above its section, in the order defined by CategoryEnum.
-    Uses DISPLAY_MODE from config.py for display_pretty.
-    """
-    if not counters:
-        return "No counters found."
-    unescape_func = unescape_func if unescape_func is not None else fully_unescape
-
-    # Get category order from CategoryEnum definition
-    category_order = [e.value for e in CategoryEnum]
-
-    # Group counters by category
-    category_map = {}
-    for c in counters:
-        cat = c.category if c.category else "general"
-        category_map.setdefault(cat, []).append(c)
-
-    lines = []
-    # Add categories in CategoryEnum order first
-    for cat in category_order:
-        if cat in category_map:
-            lines.append(f"**{cat.title()}**")
-            for c in category_map[cat]:
-                lines.append(c.generate_display(unescape_func, DISPLAY_MODE))
-            lines.append("")  # Add a blank line between categories
-
-    # Add any categories not in the CategoryEnum order
-    for cat in category_map:
-        if cat not in category_order:
-            lines.append(f"**{cat.title()}**")
-            for c in category_map[cat]:
-                lines.append(c.generate_display(unescape_func, DISPLAY_MODE))
-            lines.append("")
-
-    return "\n".join(lines).strip()
-
-
-def fully_unescape(s):
-    """
-    Unescape HTML entities in a string.
-    """
-    return html.unescape(s)
-
-
-def rename_character(user_id: str, old_name: str, new_name: str):
-    """
-    Rename a character for a user.
-    Matches both escaped and unescaped forms for old_name.
-    Disallows non-alphanumeric characters except spaces in new_name.
-    """
-    if old_name is None or new_name is None:
-        return False, "Character name cannot be empty or whitespace only."
-    # Disallow any non-alphanumeric characters except spaces in new_name
-    if not re.fullmatch(r"[A-Za-z0-9_ ]+", new_name.strip()):
-        return (
-            False,
-            "Character name must only contain alphanumeric characters, spaces, and underscores.",
-        )
-    old_name_raw = old_name.strip()
-    old_name_escaped = html.escape(old_name_raw)
-    new_name_sanitized = sanitize_string(new_name.strip())
-
-    # Validate new name
-    if new_name.strip() == "":
-        return False, "Character name cannot be empty or whitespace only."
-    if len(new_name.strip()) > MAX_FIELD_LENGTH:
-        return False, f"Character name must be at most {MAX_FIELD_LENGTH} characters."
-    if len(new_name_sanitized) > MAX_FIELD_LENGTH:
-        return False, f"Character name must be at most {MAX_FIELD_LENGTH} characters."
-
-    # Check uniqueness for sanitized new name
-    if _character_exists(user_id, new_name_sanitized):
-        return False, "A character with that name already exists for you."
-
-    # Try both escaped and raw for lookup
-    char_doc = CharacterRepository.find_one(
-        {"user": user_id, "character": old_name_escaped}
-    )
-    if not char_doc:
-        char_doc = CharacterRepository.find_one(
-            {"user": user_id, "character": old_name_raw}
-        )
-    if not char_doc:
-        return False, "Character to rename not found."
-    CharacterRepository.update_one(
-        {"_id": char_doc["_id"]}, {"$set": {"character": new_name_sanitized}}
-    )
-    return True, None
 
 
 def remove_character(user_id: str, character: str):

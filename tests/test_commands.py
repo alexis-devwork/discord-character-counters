@@ -95,7 +95,7 @@ class TestCommands:
             counter_type = "perm_is_maximum"
 
             add_user_character(user_id, character_name)
-            character_id = get_character_id_by_user_and_name(user_id, character_name)
+            get_character_id_by_user_and_name(user_id, character_name)
 
             test_characters_collection.find_one.return_value = {
                 "_id": valid_object_id,

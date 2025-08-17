@@ -36,7 +36,7 @@ class TestMongoOperations(unittest.TestCase):
 
         # Test adding a character
         success, error = utils.add_user_character("user123", "Test Character")
-        character_id = utils.get_character_id_by_user_and_name(
+        utils.get_character_id_by_user_and_name(
             "user123", "Test Character"
         )  # FIXED
 

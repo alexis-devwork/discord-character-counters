@@ -18,7 +18,6 @@ from counter import PredefinedCounterEnum, CategoryEnum, Counter, CounterTypeEnu
 class TestCounterManagement:
     # Test adding a custom counter
     def test_add_custom_counter(self, test_characters_collection):
-        valid_object_id = "123456789012345678901234"  # Use valid ObjectId
 
         with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_counter_1"
@@ -76,7 +75,6 @@ class TestCounterManagement:
 
     # Test adding a predefined counter
     def test_add_predefined_counter(self, test_characters_collection):
-        valid_object_id = "123456789012345678901234"  # Use valid ObjectId
 
         with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_counter_2"
@@ -110,7 +108,6 @@ class TestCounterManagement:
 
     # Test updating a counter
     def test_update_counter(self, test_characters_collection):
-        valid_object_id = "123456789012345678901234"
 
         with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_counter_3"
@@ -122,7 +119,6 @@ class TestCounterManagement:
             # Add a counter with type perm_is_maximum
             counter_name = "Update Test Counter"
             value = 5
-            perm = 10
             counter_type = "perm_is_maximum"
 
             add_counter(character_id, counter_name, value, counter_type=counter_type)
@@ -160,7 +156,6 @@ class TestCounterManagement:
 
     # Test removing a counter
     def test_remove_counter(self, test_characters_collection):
-        valid_object_id = "123456789012345678901234"  # Use valid ObjectId
 
         with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_counter_4"
@@ -190,7 +185,6 @@ class TestCounterManagement:
 
     # Test string sanitization when adding a counter
     def test_counter_name_sanitization(self, test_characters_collection):
-        valid_object_id = "123456789012345678901234"  # Use valid ObjectId
 
         with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_sanitize"
@@ -237,7 +231,6 @@ class TestCounterManagement:
 
     # Test counter name uniqueness constraint
     def test_counter_name_uniqueness(self, test_characters_collection):
-        valid_object_id = "123456789012345678901234"  # Use valid ObjectId
 
         with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_uniqueness"
@@ -272,7 +265,6 @@ class TestCounterManagement:
 
     # Test renaming counter uniqueness constraint
     def test_rename_counter_uniqueness(self, test_characters_collection):
-        valid_object_id = "123456789012345678901234"  # Use valid ObjectId
 
         with patch("utils.characters_collection", test_characters_collection):
             user_id = "test_user_rename_uniqueness"

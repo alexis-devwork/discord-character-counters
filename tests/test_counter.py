@@ -96,7 +96,7 @@ class TestCounter:
 
     def test_single_number_factory_sets_both(self):
         # Factory should set both temp and perm to perm value
-        counter = CounterFactory.create(
+        CounterFactory.create(
             PredefinedCounterEnum.project_roll, 8, override_name="SingleNum"
         )
         # project_roll is not single_number, so let's test with direct Counter

@@ -19,7 +19,6 @@ from .autocomplete import (
     counter_type_autocomplete,
 )
 from avct_cog import register_command
-from counter import CounterTypeEnum  # <-- Add this import
 
 
 @register_command("add_group")
@@ -579,30 +578,6 @@ def register_add_commands(cog):
                 "Character not found for this user.", ephemeral=True
             )
             return
-
-        # Logic for temp/perm/bedlam based on type and set_temp_nonzero
-        temp, perm, bedlam = None, None, None
-        if counter_type == CounterTypeEnum.single_number.value:
-            temp = value
-            perm = value
-        elif counter_type == CounterTypeEnum.perm_is_maximum.value:
-            temp = value
-            perm = value
-        elif counter_type == CounterTypeEnum.perm_is_maximum_bedlam.value:
-            temp = value
-            perm = value
-            bedlam = 0
-        elif counter_type == CounterTypeEnum.perm_not_maximum.value:
-            if set_temp_nonzero:
-                temp = value
-            else:
-                temp = 0
-            perm = value
-        else:
-            temp = 0
-            perm = value
-
-        # Add the counter
 
         success, error = add_counter(
             character_id,

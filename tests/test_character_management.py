@@ -274,7 +274,7 @@ class TestCharacterManagement:
             if isinstance(result, (tuple, list)):
                 success, error = result[:2]
             else:
-                success, error = result, None
+                success, _error = result, None
             assert success is True
             # error may be None or not present
             # Verify it's gone

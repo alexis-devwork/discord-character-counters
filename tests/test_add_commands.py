@@ -31,7 +31,7 @@ def test_add_character_sorc_creates_character_and_counters(dummy_cog):
         add_commands.register_add_commands(dummy_cog)
 
         # Prepare interaction
-        interaction = DummyInteraction(user_id="user1")
+        DummyInteraction(user_id="user1")
         # Call command
         # Simulate command call (directly call the function)
         # You may need to adapt this if your command registration is different
@@ -45,7 +45,7 @@ def test_add_character_vampire_creates_character_and_counters(dummy_cog):
         mock_collection.insert_one.return_value = None
         mock_collection.update_one.return_value = None
         add_commands.register_add_commands(dummy_cog)
-        interaction = DummyInteraction(user_id="user2")
+        DummyInteraction(user_id="user2")
         # Similar to above, check that the command would call the expected utils
 
 
@@ -55,7 +55,7 @@ def test_add_character_changeling_creates_character_and_counters(dummy_cog):
         mock_collection.insert_one.return_value = None
         mock_collection.update_one.return_value = None
         add_commands.register_add_commands(dummy_cog)
-        interaction = DummyInteraction(user_id="user3")
+        DummyInteraction(user_id="user3")
         # Similar to above, check that the command would call the expected utils
 
 
@@ -65,7 +65,7 @@ def test_add_character_fera_creates_character_and_counters(dummy_cog):
         mock_collection.insert_one.return_value = None
         mock_collection.update_one.return_value = None
         add_commands.register_add_commands(dummy_cog)
-        interaction = DummyInteraction(user_id="user4")
+        DummyInteraction(user_id="user4")
         # Similar to above, check that the command would call the expected utils
 
 

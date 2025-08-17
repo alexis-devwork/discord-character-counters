@@ -291,4 +291,4 @@ def test_health_add_damage_with_extra_level():
     health.add_damage(3, DamageEnum.Bashing)
     assert health.damage == [DamageEnum.Bashing.value] * 3
     # Adding more damage than levels
-    msg = health.add_damage(2, DamageEnum.Lethal)
+    health.add_damage(2, DamageEnum.Lethal)
