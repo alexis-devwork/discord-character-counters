@@ -264,11 +264,11 @@ def update_counter(character_id, counter_name, field, delta):
     """
     Increment or decrement a counter's temp or perm value.
     For single_number type, both temp and perm are incremented/decremented together.
+    For single_number_exhaustible, remove if value would be zero or less.
     """
     counters = get_counters_for_character(character_id)
     char_doc = None
     try:
-        # Try ObjectId lookup first
         char_doc = _get_character_by_id(character_id)
     except Exception:
         pass
@@ -278,11 +278,14 @@ def update_counter(character_id, counter_name, field, delta):
     counter_obj = next((Counter.from_dict(c) for c in counters if c["counter"] == counter_name), None)
     if not counter_obj:
         return False, "Counter not found."
-    # --- PATCH: Use Counter.apply_delta for correct logic ---
-    success, error = counter_obj.apply_delta(field, delta)
+    success, error, remove = counter_obj.apply_delta(field, delta)
+    if remove:
+        # Remove the counter if exhausted
+        new_counters = [c for c in counters if c["counter"] != counter_name]
+        CharacterRepository.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": new_counters}})
+        return True, None
     if not success:
         return False, error
-    # Save changes
     for idx, c in enumerate(counters):
         if c["counter"] == counter_name:
             counters[idx] = counter_obj.__dict__

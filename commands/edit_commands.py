@@ -148,6 +148,17 @@ def register_edit_commands(cog):
             await handle_counter_not_found(interaction)
             return
 
+        # For single_number_exhaustible, remove if set would set to 0 or less
+        if target.counter_type == CounterTypeEnum.single_number_exhaustible.value and value <= 0:
+            from utils import remove_counter
+            remove_success, remove_error, details = remove_counter(character_id, counter)
+            msg = generate_counters_output(get_counters_for_character(character_id), fully_unescape)
+            await interaction.response.send_message(
+                f"Counter '{counter}' was exhausted and removed from character '{character}'.\n\n{msg}",
+                ephemeral=True
+            )
+            return
+
         # Update the appropriate field
         if field == "temp":
             # If value < 0, set both temp and perm to zero
@@ -342,6 +353,17 @@ def register_edit_commands(cog):
         target = _get_counter_by_name(counters, counter)
         if not target:
             await handle_counter_not_found(interaction)
+            return
+
+        # For single_number_exhaustible, remove if decrement would set to 0 or less
+        if target.counter_type == CounterTypeEnum.single_number_exhaustible.value and (target.temp - points) <= 0:
+            from utils import remove_counter
+            remove_success, remove_error, details = remove_counter(character_id, counter)
+            msg = _build_full_character_output(character_id)
+            await interaction.response.send_message(
+                f"Counter '{counter}' was exhausted and removed from character '{character}'.\n\n{msg}",
+                ephemeral=True
+            )
             return
 
         # If decrement would result in temp < 0, set both temp and perm to zero

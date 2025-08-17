@@ -473,3 +473,62 @@ class TestCounterManagement:
             assert counter.temp == 2
             assert counter.perm == 2
 
+    def test_single_number_exhaustible_removal(self, test_characters_collection):
+        with patch('utils.characters_collection', test_characters_collection):
+            user_id = "test_user_exhaustible"
+            character_name = "ExhaustibleChar"
+            add_user_character(user_id, character_name)
+            character_id = get_character_id_by_user_and_name(user_id, character_name)
+            # Add single_number_exhaustible counter
+            counter_name = "ExhaustibleNum"
+            success, error = add_counter(character_id, counter_name, 3, 3, counter_type="single_number_exhaustible")
+            assert success is True
+            counters = get_counters_for_character(character_id)
+            counter = next((c for c in counters if c.counter == counter_name), None)
+            assert counter.temp == 3
+            assert counter.perm == 3
+            # Decrement temp by 2, should remain
+            success, error = update_counter(character_id, counter_name, "temp", -2)
+            assert success is True
+            counters = get_counters_for_character(character_id)
+            counter = next((c for c in counters if c.counter == counter_name), None)
+            assert counter.temp == 1
+            assert counter.perm == 1
+            # Decrement temp by 1, should remove counter
+            success, error = update_counter(character_id, counter_name, "temp", -1)
+            assert success is True
+            counters = get_counters_for_character(character_id)
+            assert not any(c.counter == counter_name for c in counters)
+            # Add again and decrement perm to zero
+            success, error = add_counter(character_id, counter_name, 2, 2, counter_type="single_number_exhaustible")
+            assert success is True
+            success, error = update_counter(character_id, counter_name, "perm", -2)
+            assert success is True
+            counters = get_counters_for_character(character_id)
+            assert not any(c.counter == counter_name for c in counters)
+
+    def test_single_number_not_removed_at_zero(self, test_characters_collection):
+        with patch('utils.characters_collection', test_characters_collection):
+            user_id = "test_user_regular_single"
+            character_name = "RegularSingleChar"
+            add_user_character(user_id, character_name)
+            character_id = get_character_id_by_user_and_name(user_id, character_name)
+            counter_name = "RegularSingleNum"
+            success, error = add_counter(character_id, counter_name, 2, 2, counter_type="single_number")
+            assert success is True
+            # Decrement temp by 2, should set to zero but not remove
+            success, error = update_counter(character_id, counter_name, "temp", -2)
+            assert success is True
+            counters = get_counters_for_character(character_id)
+            counter = next((c for c in counters if c.counter == counter_name), None)
+            assert counter is not None
+            assert counter.temp == 0
+            assert counter.perm == 0
+            # Decrement perm by 1, should stay at zero and not remove
+            success, error = update_counter(character_id, counter_name, "perm", -1)
+            assert not success  # Should fail, can't go below zero
+            counters = get_counters_for_character(character_id)
+            counter = next((c for c in counters if c.counter == counter_name), None)
+            assert counter is not None
+            assert counter.temp == 0
+            assert counter.perm == 0

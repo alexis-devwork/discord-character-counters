@@ -20,10 +20,10 @@ class UserCharacter:
 
 class CounterTypeEnum(enum.Enum):
     single_number = "single_number"
+    single_number_exhaustible = "single_number_exhaustible"
     perm_is_maximum = "perm_is_maximum"
     perm_is_maximum_bedlam = "perm_is_maximum_bedlam"
     perm_not_maximum = "perm_not_maximum"
-    xp = "xp"
     health = "health"
 
 
@@ -52,7 +52,6 @@ class CategoryEnum(enum.Enum):
     items = "items"
     other = "other"
     projects = "projects"
-    xp = "xp"
 
 class Counter:
     def __init__(self, counter, temp, perm, category, comment=None, bedlam=0, counter_type="single_number"):
@@ -63,8 +62,8 @@ class Counter:
             raise ValueError("perm cannot be below zero")
         if bedlam is not None and bedlam < 0:
             raise ValueError("bedlam cannot be below zero")
-        # For single_number type, always keep temp and perm equal
-        if counter_type == CounterTypeEnum.single_number.value:
+        # For single_number and single_number_exhaustible type, always keep temp and perm equal
+        if counter_type in [CounterTypeEnum.single_number.value, CounterTypeEnum.single_number_exhaustible.value]:
             if temp is not None and perm is not None and temp != perm:
                 perm = temp
             elif temp is not None:
@@ -186,27 +185,32 @@ class Counter:
 
     def apply_delta(self, field, delta):
         """
-        For single_number type, increment/decrement both temp and perm together.
+        For single_number and single_number_exhaustible type, increment/decrement both temp and perm together.
+        For single_number_exhaustible, if value would be zero or less, signal removal.
         For other types, increment/decrement only the specified field.
-        Returns (success: bool, error: str or None)
+        Returns (success: bool, error: str or None, remove: bool)
         """
-        if self.counter_type == CounterTypeEnum.single_number.value:
+        remove = False
+        if self.counter_type in [CounterTypeEnum.single_number.value, CounterTypeEnum.single_number_exhaustible.value]:
             new_value = getattr(self, field) + delta
+            if self.counter_type == CounterTypeEnum.single_number_exhaustible.value and new_value <= 0:
+                remove = True
+                return True, None, remove
             if new_value < 0:
-                return False, f"{field} cannot be below zero"
+                return False, f"{field} cannot be below zero", False
             self.temp = new_value
             self.perm = new_value
-            return True, None
+            return True, None, remove
         else:
             new_value = getattr(self, field) + delta
             if new_value < 0:
-                return False, f"{field} cannot be below zero"
+                return False, f"{field} cannot be below zero", False
             setattr(self, field, new_value)
             # For perm_is_maximum types, cap temp to perm if needed
             if field == "perm" and self.counter_type in [CounterTypeEnum.perm_is_maximum.value, CounterTypeEnum.perm_is_maximum_bedlam.value]:
                 if self.temp > self.perm:
                     self.temp = self.perm
-            return True, None
+            return True, None, False
 
 class CounterFactory:
     @staticmethod
