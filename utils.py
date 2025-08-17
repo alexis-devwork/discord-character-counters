@@ -28,6 +28,7 @@ from utils_helpers import (
     _user_at_character_limit,
     _create_character_entry,
 )
+from health import HealthLevelEnum  # Add this import
 
 # Load environment variables
 load_dotenv()
@@ -900,7 +901,16 @@ def add_health_level(character_id: str, health_type: str, health_level_type: str
             levels = h.get("health_levels", [])
             # Allow duplicates, just append
             levels.append(health_level_type)
-            h["health_levels"] = levels
+
+            # Sort the health levels based on the predefined order in HealthLevelEnum
+            enum_order = [e.value for e in HealthLevelEnum]
+            h["health_levels"] = sorted(
+                levels,
+                key=lambda x: (enum_order.index(x), levels.index(x))
+                if x in enum_order
+                else (len(enum_order), levels.index(x)),
+            )
+
             CharacterRepository.update_one(
                 {"_id": ObjectId(character_id)}, {"$set": {"health": health_list}}
             )

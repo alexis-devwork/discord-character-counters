@@ -5,7 +5,6 @@ from utils import (
     generate_counters_output,
     fully_unescape,
     handle_character_not_found,
-    handle_invalid_health_type,
     handle_invalid_damage_type,
     handle_health_tracker_not_found,
     update_health_in_db,  # Add import
@@ -225,10 +224,10 @@ def register_configav_health_commands(cog):
     # Get the existing add group that was created in avct_cog.py
     add_group = cog.add_group
 
-    # Add the command to configav add health_level
+    # Modify the command to add health levels to all health trackers
     @add_group.command(
         name="health_level",
-        description="Add an extra health level to a character's health tracker",
+        description="Add an extra health level to all health trackers for a character",
     )
     @discord.app_commands.autocomplete(
         character=character_name_autocomplete,
@@ -237,7 +236,6 @@ def register_configav_health_commands(cog):
     async def add_health_level_cmd(
         interaction: discord.Interaction,
         character: str,
-        health_type: str,
         health_level_type: str,
     ):
         user_id = str(interaction.user.id)
@@ -246,21 +244,49 @@ def register_configav_health_commands(cog):
             await handle_character_not_found(interaction)
             return
 
-        # Validate health_type
-        valid_types = [e.value for e in HealthTypeEnum]
-        if health_type not in valid_types:
-            await handle_invalid_health_type(interaction)
-            return
-
-        # Add health level
-        success, error = add_health_level(character_id, health_type, health_level_type)
-        if not success:
+        # Retrieve the character's health trackers
+        char_doc = CharacterRepository.find_one({"_id": ObjectId(character_id)})
+        if not char_doc:
             await interaction.response.send_message(
-                f"Failed to add health level: {error}", ephemeral=True
+                "Character not found.", ephemeral=True
             )
             return
 
-        await interaction.response.send_message(
-            f"Added health level '{health_level_type}' to {health_type} health tracker for character '{character}'.",
-            ephemeral=True,
-        )
+        health_list = char_doc.get("health", [])
+        if not health_list:
+            await interaction.response.send_message(
+                f"No health trackers found for character '{character}'.", ephemeral=True
+            )
+            return
+
+        # Add the health level to all health trackers
+        success = False
+        for tracker in health_list:
+            tracker_type = tracker.get("health_type")
+            levels = tracker.get("health_levels", [])
+            levels.append(health_level_type)
+
+            # Sort the health levels based on the predefined order in HealthLevelEnum
+            enum_order = [e.value for e in HealthLevelEnum]
+            tracker["health_levels"] = sorted(
+                levels,
+                key=lambda x: enum_order.index(x) if x in enum_order else len(enum_order),
+            )
+
+            tracker_success, error = add_health_level(
+                character_id, tracker_type, health_level_type
+            )
+            if tracker_success:
+                success = True
+            else:
+                await interaction.response.send_message(
+                    f"Failed to add health level to {tracker_type} tracker: {error}",
+                    ephemeral=True,
+                )
+                return
+
+        if success:
+            await interaction.response.send_message(
+                f"Added health level '{health_level_type}' to all health trackers for character '{character}'.",
+                ephemeral=True,
+            )
