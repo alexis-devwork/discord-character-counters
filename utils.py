@@ -864,8 +864,8 @@ def remove_character(user_id: str, character: str):
 
 def update_counter_in_db(character_id, counter_name, field, value, target=None):
     """
-    Update a counter's field (perm or temp) directly in the database.
-    If target is provided, updates both temp and perm from the target object.
+    Update a counter's field (perm, temp, or bedlam) directly in the database.
+    If target is provided, updates temp, perm, and bedlam from the target object.
     """
     char_doc = _get_character_by_id(character_id)
     if not char_doc:
@@ -876,6 +876,7 @@ def update_counter_in_db(character_id, counter_name, field, value, target=None):
             if target:
                 c["perm"] = target.perm
                 c["temp"] = target.temp
+                c["bedlam"] = target.bedlam  # Ensure bedlam is updated if target is provided
             else:
                 c[field] = value
             counters[idx] = c
