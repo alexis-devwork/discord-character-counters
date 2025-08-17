@@ -10,8 +10,9 @@ from utils import (
     update_counter,
     handle_character_not_found,
     handle_counter_not_found,
-    update_counter_in_db,  # Add import
+    update_counter_in_db,
     update_counter_comment,
+    sanitize_string,
 )
 from utils import CharacterRepository
 from bson import ObjectId
@@ -307,54 +308,6 @@ def register_edit_commands(cog):
                 error or "Failed to set category.", ephemeral=True
             )
 
-    # --- Rename counter ---
-    @cog.edit_group.command(
-        name="counter", description="Rename a counter for a character"
-    )
-    @discord.app_commands.autocomplete(
-        character=character_name_autocomplete,
-        counter=counter_name_autocomplete_for_character,
-    )
-    async def rename_counter_cmd(
-        interaction: discord.Interaction, character: str, counter: str, new_name: str
-    ):
-        character = sanitize_string(character)
-        character = sanitize_string(character)
-        user_id = str(interaction.user.id)
-        character_id = get_character_id_by_user_and_name(user_id, character)
-        if character_id is None:
-            await handle_character_not_found(interaction)
-            return
-        # Clean up counter name
-        counter = sanitize_string(counter)
-        new_name = sanitize_string(new_name)
-
-
-        counter = sanitize_string(counter)
-        new_name = sanitize_string(new_name)
-                f"Counter '{counter}' renamed to '{new_name}' for character '{character}'.",
-        success, error = rename_counter(character_id, counter, new_name)
-        if success:
-            await interaction.response.send_message(
-            # Make sure we're handling any possible error
-            try:
-                await interaction.response.send_message(
-                    f"Failed to rename counter: {error}", ephemeral=True
-                )
-            except Exception as e:
-                # If the response has already been sent, try a followup
-                try:
-                    await interaction.followup.send(
-                        f"Failed to rename counter: {error}", ephemeral=True
-                    )
-                except Exception:
-                    # Last resort - just print to console
-                    print(f"Failed to send error message: {e}")
-                    print(f"Original error: {error}")
-            await interaction.response.send_message(
-                f"Failed to rename counter: {error}", ephemeral=True
-            )
-
     # --- Rename character ---
     @cog.rename_group.command(name="character", description="Rename a character")
     @discord.app_commands.autocomplete(character=character_name_autocomplete)
@@ -376,6 +329,38 @@ def register_edit_commands(cog):
                 await interaction.response.send_message(
                     error or "Failed to rename character.", ephemeral=True
                 )
+
+    # --- Rename counter (moved to rename_group) ---
+    @cog.rename_group.command(
+        name="counter", description="Rename a counter for a character"
+    )
+    @discord.app_commands.autocomplete(
+        character=character_name_autocomplete,
+        counter=counter_name_autocomplete_for_character,
+    )
+    async def rename_counter_cmd(
+        interaction: discord.Interaction, character: str, counter: str, new_name: str
+    ):
+        user_id = str(interaction.user.id)
+        character_id = get_character_id_by_user_and_name(user_id, character)
+        if character_id is None:
+            await handle_character_not_found(interaction)
+            return
+
+        # Clean up counter name
+        counter = sanitize_string(counter)
+        new_name = sanitize_string(new_name)
+
+        success, error = rename_counter(character_id, counter, new_name)
+        if success:
+            await interaction.response.send_message(
+                f"Counter '{counter}' renamed to '{new_name}' for character '{character}'.",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                f"Failed to rename counter: {error}", ephemeral=True
+            )
 
     @cog.avct_group.command(name="plus", description="Add points to a counter")
     @discord.app_commands.autocomplete(
