@@ -260,62 +260,35 @@ def _character_at_counter_limit(counters: list) -> bool:
     """Check if the character has reached the maximum counter limit."""
     return len(counters) >= MAX_COUNTERS_PER_CHARACTER
 
-def update_counter(character_id, counter_name, field, value):
+def update_counter(character_id, counter_name, field, delta):
     """
-    Update a counter's temp or perm field by adding or subtracting value.
-    Used for plus and minus commands and tests.
+    Increment or decrement a counter's temp or perm value.
+    For single_number type, both temp and perm are incremented/decremented together.
     """
-    if field not in ["temp", "perm"]:
-        return False, "Field must be 'temp' or 'perm'."
-
     counters = get_counters_for_character(character_id)
-    target = next((c for c in counters if c.counter == counter_name), None)
-
-    if not target:
+    char_doc = None
+    try:
+        # Try ObjectId lookup first
+        char_doc = _get_character_by_id(character_id)
+    except Exception:
+        pass
+    if not char_doc:
+        return False, "Character not found."
+    counters = char_doc.get("counters", [])
+    counter_obj = next((Counter.from_dict(c) for c in counters if c["counter"] == counter_name), None)
+    if not counter_obj:
         return False, "Counter not found."
-
-    current_value = getattr(target, field)
-    new_value = current_value + value
-
-    # Handle special validation for temp value
-    if field == "temp":
-        # Only restrict temp > perm for max types
-        if target.counter_type in [CounterTypeEnum.perm_is_maximum.value, CounterTypeEnum.perm_is_maximum_bedlam.value]:
-            if new_value > target.perm:
-                new_value = target.perm
-        if new_value < 0:
-            return False, "Temp value cannot be below zero."
-        setattr(target, field, new_value)
-    elif field == "perm":
-        if new_value < 0:
-            return False, "Perm value cannot be below zero."
-        setattr(target, field, new_value)
-        # For perm_is_maximum types, adjust temp if perm is lowered below temp
-
-    update_counter_in_db(character_id, counter_name, field, getattr(target, field), target)
+    # --- PATCH: Use Counter.apply_delta for correct logic ---
+    success, error = counter_obj.apply_delta(field, delta)
+    if not success:
+        return False, error
+    # Save changes
+    for idx, c in enumerate(counters):
+        if c["counter"] == counter_name:
+            counters[idx] = counter_obj.__dict__
+            break
+    CharacterRepository.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": counters}})
     return True, None
-
-def update_counter_in_db(character_id: str, counter_name: str, field: str, value, target=None):
-    """
-    Update a counter field in MongoDB. Optionally adjust temp if perm is lowered below temp.
-    Matches counter_name both escaped and unescaped.
-    """
-    char_doc = _get_character_by_id(character_id)
-    counters_list = char_doc.get("counters", [])
-
-    counter_name_raw = counter_name.strip()
-    counter_name_escaped = html.escape(counter_name_raw)
-
-    for c in counters_list:
-        if c["counter"] == counter_name_raw or c["counter"] == counter_name_escaped:
-            c[field] = value
-            # If updating perm, adjust temp for max types
-            if field == "perm" and target and target.counter_type in [CounterTypeEnum.perm_is_maximum.value, CounterTypeEnum.perm_is_maximum_bedlam.value]:
-                if target.temp > target.perm:
-                    c["temp"] = target.temp = target.perm
-
-    CharacterRepository.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": counters_list}})
-    return get_counters_for_character(character_id)
 
 def update_health_in_db(character_id: str, health_type: str, damage):
     """
@@ -828,3 +801,24 @@ def _create_character_entry(user_id: str, character: str) -> dict:
         "counters": [],
         "health": []
     }
+
+def update_counter_in_db(character_id, counter_name, field, value, target=None):
+    """
+    Update a counter's field (perm or temp) directly in the database.
+    If target is provided, updates both temp and perm from the target object.
+    """
+    char_doc = _get_character_by_id(character_id)
+    if not char_doc:
+        return []
+    counters = char_doc.get("counters", [])
+    for idx, c in enumerate(counters):
+        if c["counter"] == counter_name:
+            if target:
+                c["perm"] = target.perm
+                c["temp"] = target.temp
+            else:
+                c[field] = value
+            counters[idx] = c
+            break
+    CharacterRepository.update_one({"_id": ObjectId(character_id)}, {"$set": {"counters": counters}})
+    return [CounterFactory.from_dict(c) for c in counters]

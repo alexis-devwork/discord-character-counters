@@ -16,9 +16,12 @@ from .autocomplete import (
     character_name_autocomplete,
     category_autocomplete,
     predefined_counter_type_autocomplete,
-    health_type_autocomplete
+    health_type_autocomplete,
+    # Add import for counter_type_autocomplete
+    counter_type_autocomplete
 )
 from avct_cog import register_command
+from counter import CounterTypeEnum  # <-- Add this import
 
 @register_command("add_group")
 def register_add_commands(cog):
@@ -434,13 +437,18 @@ def register_add_commands(cog):
 
     # --- Add custom counter ---
     @cog.add_group.command(name="customcounter", description="Add a custom counter to a character")
-    @app_commands.autocomplete(character=character_name_autocomplete, category=category_autocomplete)
+    @app_commands.autocomplete(
+        character=character_name_autocomplete,
+        category=category_autocomplete,
+        counter_type=counter_type_autocomplete  # Add autocomplete for counter_type
+    )
     async def add_customcounter_cmd(
         interaction: discord.Interaction,
         character: str,
         counter: str,
         temp: int,
         perm: int,
+        counter_type: str,
         category: str = CategoryEnum.general.value,
         comment: str = None
     ):
@@ -457,13 +465,19 @@ def register_add_commands(cog):
         if comment:
             comment = sanitize_string(comment)
 
+        # If type is single_number and temp != perm, use perm for both and notify user
+        output_note = ""
+        if counter_type == CounterTypeEnum.single_number.value and temp != perm:
+            temp = perm
+            output_note = "Single number, using specified value of perm and ignoring temp. "
+
         # Add the counter
-        success, error = add_counter(character_id, counter, temp, perm, category, comment)
+        success, error = add_counter(character_id, counter, temp, perm, category, comment, counter_type)
 
         # Handle result
         if success:
             await interaction.response.send_message(
-                f"Counter '{counter}' added to character '{character}'.", ephemeral=True)
+                f"{output_note}Counter '{counter}' added to character '{character}'.", ephemeral=True)
         else:
             await interaction.response.send_message(error or "Failed to add counter.", ephemeral=True)
 

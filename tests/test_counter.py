@@ -56,6 +56,44 @@ class TestCounter:
         )
         assert counter.temp == 5
 
+    def test_single_number_temp_sets_perm(self):
+        # Setting temp should set perm to same value
+        c = Counter("Single", 7, 3, "general", counter_type=CounterTypeEnum.single_number.value)
+        assert c.temp == 7
+        assert c.perm == 7
+
+    def test_single_number_perm_sets_temp(self):
+        # Setting perm should set temp to same value
+        c = Counter("Single", None, 5, "general", counter_type=CounterTypeEnum.single_number.value)
+        assert c.perm == 5
+        assert c.temp == 5
+
+    def test_single_number_factory_sets_both(self):
+        # Factory should set both temp and perm to perm value
+        counter = CounterFactory.create(PredefinedCounterEnum.project_roll, 8, override_name="SingleNum")
+        # project_roll is not single_number, so let's test with direct Counter
+        c = Counter("SingleNum", 2, 2, "general", counter_type=CounterTypeEnum.single_number.value)
+        assert c.temp == 2
+        assert c.perm == 2
+
+    def test_single_number_temp_and_perm_provided_and_different(self):
+        # If both temp and perm are provided and don't match, both should be set to temp
+        c = Counter("Single", 7, 3, "general", counter_type=CounterTypeEnum.single_number.value)
+        assert c.temp == 7
+        assert c.perm == 7
+
+    def test_single_number_temp_only(self):
+        # If only temp is provided, perm should be set to temp
+        c = Counter("Single", 8, None, "general", counter_type=CounterTypeEnum.single_number.value)
+        assert c.temp == 8
+        assert c.perm == 8
+
+    def test_single_number_perm_only(self):
+        # If only perm is provided, temp should be set to perm
+        c = Counter("Single", None, 9, "general", counter_type=CounterTypeEnum.single_number.value)
+        assert c.temp == 9
+        assert c.perm == 9
+
 class TestCounterFactory:
 
     def test_create_factory_method(self):

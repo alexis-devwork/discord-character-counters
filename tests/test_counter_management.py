@@ -46,8 +46,9 @@ class TestCounterManagement:
             counters = get_counters_for_character(character_id)
             counter = next((c for c in counters if c.counter == counter_name), None)
             assert counter is not None
+            # For single_number, both temp and perm should be set to temp value
             assert counter.temp == temp
-            assert counter.perm == perm
+            assert counter.perm == temp
             assert counter.category == category
             assert counter.comment == comment
             assert counter.counter_type == counter_type
@@ -433,3 +434,42 @@ class TestCounterManagement:
         # perm_is_maximum_bedlam: should set temp to perm, not raise
         c = Counter("BedlamCounterInit", 6, 5, "general", bedlam=2, counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value)
         assert c.temp == 5 and c.bedlam == 2
+
+    def test_single_number_counter_temp_and_perm_sync(self, test_characters_collection):
+        with patch('utils.characters_collection', test_characters_collection):
+            user_id = "test_user_single_number"
+            character_name = "SingleNumberChar"
+            add_user_character(user_id, character_name)
+            character_id = get_character_id_by_user_and_name(user_id, character_name)
+            # Add single_number counter
+            counter_name = "SingleNum"
+            success, error = add_counter(character_id, counter_name, 3, 5, counter_type="single_number")
+            assert success is True
+            counters = get_counters_for_character(character_id)
+            counter = next((c for c in counters if c.counter == counter_name), None)
+            # Both temp and perm should be equal to temp (3)
+            assert counter.temp == 3
+            assert counter.perm == 3
+            # Increment temp by 7, both should be 10
+            success, error = update_counter(character_id, counter_name, "temp", 7)
+            assert success is True
+            counters = get_counters_for_character(character_id)
+            counter = next((c for c in counters if c.counter == counter_name), None)
+            assert counter.temp == 10
+            assert counter.perm == 10
+            # Decrement perm by 8, both should be 2
+            success, error = update_counter(character_id, counter_name, "perm", -8)
+            assert success is True
+            counters = get_counters_for_character(character_id)
+            counter = next((c for c in counters if c.counter == counter_name), None)
+            assert counter.temp == 2
+            assert counter.perm == 2
+            # Try to decrement temp below zero (should fail)
+            success, error = update_counter(character_id, counter_name, "temp", -5)
+            assert not success
+            assert "below zero" in error
+            counters = get_counters_for_character(character_id)
+            counter = next((c for c in counters if c.counter == counter_name), None)
+            assert counter.temp == 2
+            assert counter.perm == 2
+

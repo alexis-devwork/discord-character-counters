@@ -49,9 +49,12 @@ def register_edit_commands(cog):
         if value < 0:
             await interaction.response.send_message("Cannot set temp below zero.", ephemeral=True)
             return None, False
+        # For single_number type, set perm to same value
+        if target.counter_type == CounterTypeEnum.single_number.value:
+            target.perm = value
+            return value, True
         if target.counter_type in [CounterTypeEnum.perm_is_maximum.value, CounterTypeEnum.perm_is_maximum_bedlam.value]:
             if value > target.perm:
-                # Just set temp to perm instead of failing
                 return target.perm, True
             else:
                 return value, True
@@ -61,7 +64,13 @@ def register_edit_commands(cog):
     def _update_perm_value(target, value):
         """Update the perm value and adjust temp if necessary."""
         if value < 0:
-            raise ValueError("Cannot set perm below zero.")
+            # If value < 0, set both temp and perm to zero for all types
+            target.perm = 0
+            target.temp = 0
+            return target
+        # For single_number type, set temp to same value
+        if target.counter_type == CounterTypeEnum.single_number.value:
+            target.temp = value
         target.perm = value
         # For perm_is_maximum types, adjust temp if perm is lowered below temp
         if target.counter_type in [CounterTypeEnum.perm_is_maximum.value, CounterTypeEnum.perm_is_maximum_bedlam.value]:
@@ -141,28 +150,34 @@ def register_edit_commands(cog):
 
         # Update the appropriate field
         if field == "temp":
-            new_value, is_valid = await _update_temp_value(target, value, interaction)
-            if not is_valid:
-                return
-            target.temp = new_value
-        elif field == "perm":
-            # --- PATCH: Don't raise, just message and skip ---
+            # If value < 0, set both temp and perm to zero
             if value < 0:
-                await interaction.response.send_message("Cannot set perm below zero.", ephemeral=True)
-                return
-            # For perm_is_maximum types, check if temp would be greater than perm
-            if target.counter_type in [CounterTypeEnum.perm_is_maximum.value, CounterTypeEnum.perm_is_maximum_bedlam.value]:
-                if target.temp > value:
-                    await interaction.response.send_message(
-                        "Temp cannot be greater than perm for this counter type. No changes were saved.",
-                        ephemeral=True
-                    )
+                target.temp = 0
+                target.perm = 0
+            else:
+                new_value, is_valid = await _update_temp_value(target, value, interaction)
+                if not is_valid:
                     return
-            target.perm = value
-            # For perm_is_maximum types, adjust temp if perm is lowered below temp
-            if target.counter_type in [CounterTypeEnum.perm_is_maximum.value, CounterTypeEnum.perm_is_maximum_bedlam.value]:
-                if target.temp > target.perm:
-                    target.temp = target.perm
+                target.temp = new_value
+        elif field == "perm":
+            # If value < 0, set both temp and perm to zero
+            if value < 0:
+                target.perm = 0
+                target.temp = 0
+            else:
+                # For perm_is_maximum types, check if temp would be greater than perm
+                if target.counter_type in [CounterTypeEnum.perm_is_maximum.value, CounterTypeEnum.perm_is_maximum_bedlam.value]:
+                    if target.temp > value:
+                        await interaction.response.send_message(
+                            "Temp cannot be greater than perm for this counter type. No changes were saved.",
+                            ephemeral=True
+                        )
+                        return
+                target.perm = value
+                # For perm_is_maximum types, adjust temp if perm is lowered below temp
+                if target.counter_type in [CounterTypeEnum.perm_is_maximum.value, CounterTypeEnum.perm_is_maximum_bedlam.value]:
+                    if target.temp > target.perm:
+                        target.temp = target.perm
 
         # Update in MongoDB
         counters = _update_counter_in_mongodb(character_id, counter, target)
@@ -277,6 +292,24 @@ def register_edit_commands(cog):
             await handle_character_not_found(interaction)
             return
 
+        # Get counter
+        counters = get_counters_for_character(character_id)
+        target = _get_counter_by_name(counters, counter)
+        if not target:
+            await handle_counter_not_found(interaction)
+            return
+
+        # If increment would result in temp < 0, set both temp and perm to zero
+        if (target.temp + points) < 0:
+            target.temp = 0
+            target.perm = 0
+            counters = _update_counter_in_mongodb(character_id, counter, target)
+            msg = _build_full_character_output(character_id)
+            await interaction.response.send_message(
+                f"Added {points} point(s) to counter '{counter}' on character '{character}'.\n\n"
+                f"{msg}", ephemeral=True)
+            return
+
         success, error = update_counter(character_id, counter, "temp", points)
 
         if success:
@@ -302,6 +335,24 @@ def register_edit_commands(cog):
         character_id = get_character_id_by_user_and_name(user_id, character)
         if character_id is None:
             await handle_character_not_found(interaction)
+            return
+
+        # Get counter
+        counters = get_counters_for_character(character_id)
+        target = _get_counter_by_name(counters, counter)
+        if not target:
+            await handle_counter_not_found(interaction)
+            return
+
+        # If decrement would result in temp < 0, set both temp and perm to zero
+        if (target.temp - points) < 0:
+            target.temp = 0
+            target.perm = 0
+            counters = _update_counter_in_mongodb(character_id, counter, target)
+            msg = _build_full_character_output(character_id)
+            await interaction.response.send_message(
+                f"Removed {points} point(s) from counter '{counter}' on character '{character}'.\n\n"
+                f"{msg}", ephemeral=True)
             return
 
         success, error = update_counter(character_id, counter, "temp", -points)

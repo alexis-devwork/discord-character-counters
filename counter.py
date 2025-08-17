@@ -63,6 +63,14 @@ class Counter:
             raise ValueError("perm cannot be below zero")
         if bedlam is not None and bedlam < 0:
             raise ValueError("bedlam cannot be below zero")
+        # For single_number type, always keep temp and perm equal
+        if counter_type == CounterTypeEnum.single_number.value:
+            if temp is not None and perm is not None and temp != perm:
+                perm = temp
+            elif temp is not None:
+                perm = temp
+            elif perm is not None:
+                temp = perm
         # For perm_is_maximum and perm_is_maximum_bedlam, temp cannot exceed perm
         if counter_type in ["perm_is_maximum", "perm_is_maximum_bedlam"]:
             if temp is not None and perm is not None and temp > perm:
@@ -104,6 +112,8 @@ class Counter:
             spent_pts = self.perm - self.temp
             unspent_bedlam = self.bedlam - spent_pts if spent_pts < self.bedlam else 0
             base = f"{base} (bedlam: {unspent_bedlam}/{self.bedlam})"
+        elif self.counter_type == CounterTypeEnum.single_number:
+            base = f"{fully_unescape_func(self.counter)}:\n{self.temp}"
         # Add comment if present
         if self.comment:
             base = f"{base}\n-# {self.comment}"
@@ -167,9 +177,36 @@ class Counter:
             if self.comment:
                 pretty = f"{pretty}\n-# {self.comment}"
         # Default case for other counter types
+        elif self.counter_type == CounterTypeEnum.single_number.value:
+            negative_marks = " ".join([":asterisk:"] * self.temp)
+            pretty = f"{counter_name}\n{negative_marks}"
         else:
             pretty = self.generate_display(fully_unescape_func, False)
         return pretty
+
+    def apply_delta(self, field, delta):
+        """
+        For single_number type, increment/decrement both temp and perm together.
+        For other types, increment/decrement only the specified field.
+        Returns (success: bool, error: str or None)
+        """
+        if self.counter_type == CounterTypeEnum.single_number.value:
+            new_value = getattr(self, field) + delta
+            if new_value < 0:
+                return False, f"{field} cannot be below zero"
+            self.temp = new_value
+            self.perm = new_value
+            return True, None
+        else:
+            new_value = getattr(self, field) + delta
+            if new_value < 0:
+                return False, f"{field} cannot be below zero"
+            setattr(self, field, new_value)
+            # For perm_is_maximum types, cap temp to perm if needed
+            if field == "perm" and self.counter_type in [CounterTypeEnum.perm_is_maximum.value, CounterTypeEnum.perm_is_maximum_bedlam.value]:
+                if self.temp > self.perm:
+                    self.temp = self.perm
+            return True, None
 
 class CounterFactory:
     @staticmethod

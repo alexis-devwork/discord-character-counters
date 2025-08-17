@@ -7,7 +7,7 @@ from utils import (
     sanitize_string,
     get_all_user_characters_for_user
 )
-from counter import CategoryEnum
+from counter import CategoryEnum, CounterTypeEnum
 
 def enum_autocomplete(enum_cls, current: str, title_case=False):
     """Generalized autocomplete for enums."""
@@ -79,3 +79,6 @@ async def health_type_autocomplete(interaction: discord.Interaction, current: st
 async def damage_type_autocomplete(interaction: discord.Interaction, current: str):
     from health import DamageEnum
     return enum_autocomplete(DamageEnum, current)
+
+async def counter_type_autocomplete(interaction: discord.Interaction, current: str):
+    return enum_autocomplete(CounterTypeEnum, current)
