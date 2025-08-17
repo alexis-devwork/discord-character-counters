@@ -3,6 +3,7 @@ Configuration file for pytest.
 
 This file sets up common fixtures and configurations for tests.
 """
+
 import sys
 import os
 import pytest
@@ -11,16 +12,17 @@ from dotenv import load_dotenv
 from bson.objectid import ObjectId  # Import ObjectId for mock user IDs
 
 # Load test environment variables
-load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env.test'))
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env.test"))
 
 # Add the parent directory to sys.path to allow importing modules
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 
 # Mock MongoDB for all tests
 @pytest.fixture(autouse=True)
 def mock_mongodb():
     """Mock MongoDB connections for all tests."""
-    with patch('pymongo.MongoClient') as mock_client:
+    with patch("pymongo.MongoClient") as mock_client:
         # Create mock db and collection
         mock_db = MagicMock()
         mock_collection = MagicMock()
@@ -29,11 +31,8 @@ def mock_mongodb():
         mock_client.return_value.__getitem__.return_value = mock_db
         mock_db.__getitem__.return_value = mock_collection
 
-        yield {
-            'client': mock_client,
-            'db': mock_db,
-            'collection': mock_collection
-        }
+        yield {"client": mock_client, "db": mock_db, "collection": mock_collection}
+
 
 # Test MongoDB collection for storing actual test data
 @pytest.fixture
@@ -51,13 +50,13 @@ def test_characters_collection():
             return None
 
         # For character lookups, add special handling for character name checks
-        if 'character' in filter_dict and 'user' in filter_dict:
-            user = filter_dict['user']
-            character_name = filter_dict['character']
+        if "character" in filter_dict and "user" in filter_dict:
+            user = filter_dict["user"]
+            character_name = filter_dict["character"]
 
             # Look for exact matches first
             for doc in test_data.values():
-                if doc.get('user') == user and doc.get('character') == character_name:
+                if doc.get("user") == user and doc.get("character") == character_name:
                     print(f"Found exact character match: {character_name}")
                     return doc
 
@@ -67,10 +66,10 @@ def test_characters_collection():
         for doc_id, doc in test_data.items():
             match = True
             for key, value in filter_dict.items():
-                if key == '_id' and str(value) != str(doc_id):
+                if key == "_id" and str(value) != str(doc_id):
                     match = False
                     break
-                elif key != '_id' and (key not in doc or doc[key] != value):
+                elif key != "_id" and (key not in doc or doc[key] != value):
                     match = False
                     break
             if match:
@@ -99,10 +98,12 @@ def test_characters_collection():
         nonlocal next_id
 
         # Check for duplicate character names
-        if 'character' in doc and 'user' in doc:
+        if "character" in doc and "user" in doc:
             for existing_doc in test_data.values():
-                if (existing_doc.get('user') == doc['user'] and
-                    existing_doc.get('character') == doc['character']):
+                if (
+                    existing_doc.get("user") == doc["user"]
+                    and existing_doc.get("character") == doc["character"]
+                ):
                     print(f"Duplicate character detected: {doc['character']}")
                     # Return a mock that will cause a duplicate key error
                     mock_result = MagicMock()
@@ -112,8 +113,9 @@ def test_characters_collection():
         # No duplicate, proceed with insert
         # Generate a valid ObjectId for _id
         from bson.objectid import ObjectId
+
         doc_id = str(ObjectId())
-        doc['_id'] = doc_id
+        doc["_id"] = doc_id
         test_data[doc_id] = doc
 
         # Debug inserted document
@@ -129,13 +131,13 @@ def test_characters_collection():
         doc = mock_find_one(filter_dict)
         if doc:
             # Handle $set operator
-            if '$set' in update_dict:
-                for key, value in update_dict['$set'].items():
+            if "$set" in update_dict:
+                for key, value in update_dict["$set"].items():
                     doc[key] = value
 
             # Handle $pull operator
-            if '$pull' in update_dict:
-                for key, pull_criteria in update_dict['$pull'].items():
+            if "$pull" in update_dict:
+                for key, pull_criteria in update_dict["$pull"].items():
                     if key in doc and isinstance(doc[key], list):
                         # Simple implementation - just matches exact dicts
                         doc[key] = [item for item in doc[key] if item != pull_criteria]
@@ -150,8 +152,8 @@ def test_characters_collection():
             for key, value in filter_dict.items():
                 new_doc[key] = value
 
-            if '$set' in update_dict:
-                for key, value in update_dict['$set'].items():
+            if "$set" in update_dict:
+                for key, value in update_dict["$set"].items():
                     new_doc[key] = value
 
             return mock_insert_one(new_doc)
@@ -165,7 +167,7 @@ def test_characters_collection():
     def mock_delete_one(filter_dict):
         doc = mock_find_one(filter_dict)
         if doc:
-            del test_data[doc['_id']]
+            del test_data[doc["_id"]]
             # Mock DeleteResult
             result = MagicMock()
             result.deleted_count = 1
@@ -190,6 +192,7 @@ def test_characters_collection():
 
     return test_collection
 
+
 # Mock Discord bot for Discord-related tests
 @pytest.fixture
 def mock_bot():
@@ -198,13 +201,16 @@ def mock_bot():
     bot.tree = MagicMock()
     return bot
 
+
 # Mock Discord interaction for testing app commands
 @pytest.fixture
 def mock_interaction():
     """Create a mock Discord interaction for testing commands."""
     interaction = MagicMock()
     interaction.response = AsyncMock()  # Use AsyncMock for asynchronous methods
-    interaction.response.send_message = AsyncMock()  # Ensure send_message is asynchronous
+    interaction.response.send_message = (
+        AsyncMock()
+    )  # Ensure send_message is asynchronous
     interaction.user = MagicMock()
     interaction.user.id = ObjectId("123456789012345678901234")  # Use a valid ObjectId
     interaction.namespace = MagicMock()

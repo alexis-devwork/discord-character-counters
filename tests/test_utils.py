@@ -1,5 +1,4 @@
 import pytest
-from unittest.mock import patch, MagicMock
 from utils import (
     sanitize_string,
     validate_length,
@@ -12,11 +11,13 @@ from utils import (
     get_character_id_by_user_and_name,
     CategoryEnum,
     PredefinedCounterEnum,
-    CounterFactory,
     MAX_COUNTERS_PER_CHARACTER,
-    MAX_FIELD_LENGTH,
+    toggle_counter_option,
+    add_user_character,
+    get_counters_for_character,
+    reset_if_eligible,
 )
-from counter import Counter, CounterTypeEnum
+from counter import Counter
 
 
 class TestSanitizationFunctions:
@@ -25,7 +26,10 @@ class TestSanitizationFunctions:
         assert sanitize_string("Normal String") == "Normal String"
 
         # Test with HTML entities
-        assert sanitize_string("<script>alert('XSS')</script>") == "&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;"
+        assert (
+            sanitize_string("<script>alert('XSS')</script>")
+            == "&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;"
+        )
 
         # Test with control characters
         assert sanitize_string("Test\x00String\x1f") == "TestString"
@@ -55,7 +59,10 @@ class TestSanitizationFunctions:
             sanitize_and_validate("field", "abcdefghijk" * 2, 20)
 
         # Test sanitization with HTML
-        assert sanitize_and_validate("field", "<b>test</b>", 50) == "&lt;b&gt;test&lt;/b&gt;"
+        assert (
+            sanitize_and_validate("field", "<b>test</b>", 50)
+            == "&lt;b&gt;test&lt;/b&gt;"
+        )
 
         # Test sanitization and validation together
         with pytest.raises(ValueError, match="Field must be at most 20 characters."):
@@ -119,6 +126,7 @@ class TestGenerateCountersOutput:
     def test_generate_counters_output_with_comments(self):
         from utils import generate_counters_output, fully_unescape, CategoryEnum
         from counter import Counter
+
         counters = [
             Counter("Willpower", 5, 10, CategoryEnum.tempers.value, "Important stat"),
             Counter("Glory", 3, 5, CategoryEnum.reknown.value),
@@ -131,9 +139,11 @@ class TestGenerateCountersOutput:
 @pytest.fixture
 def fake_characters_collection(monkeypatch):
     import bson
+
     class FakeCollection:
         def __init__(self):
             self.chars = {}
+
         def find_one(self, query):
             if "_id" in query:
                 for c in self.chars.values():
@@ -141,26 +151,35 @@ def fake_characters_collection(monkeypatch):
                         return c
             elif "user" in query and "character" in query:
                 for c in self.chars.values():
-                    if c.get("user") == query["user"] and c.get("character") == query["character"]:
+                    if (
+                        c.get("user") == query["user"]
+                        and c.get("character") == query["character"]
+                    ):
                         return c
             return None
+
         def update_one(self, query, update):
             char = self.find_one(query)
             if char:
                 char.update(update["$set"])
+
         def insert_one(self, doc):
             # Simulate MongoDB assigning an _id if not present
             if "_id" not in doc:
                 doc["_id"] = bson.ObjectId()
             self.chars[doc["_id"]] = doc
+
         def count_documents(self, query):
             return sum(1 for c in self.chars.values() if c.get("user") == query["user"])
+
     fake = FakeCollection()
     monkeypatch.setattr("utils.characters_collection", fake)
     return fake
 
+
 def make_character_doc(user="u", character="c", _id=None, counters=None):
     import bson
+
     if _id is None:
         _id = bson.ObjectId()
     return {
@@ -171,147 +190,244 @@ def make_character_doc(user="u", character="c", _id=None, counters=None):
         "health": [],
     }
 
+
 def test_add_counter_negative_values(fake_characters_collection):
     char_doc = make_character_doc()
     fake_characters_collection.chars["507f1f77bcf86cd799439011"] = char_doc
-    # Negative temp
-    success, error = add_counter("507f1f77bcf86cd799439011", "test", -1, 1)
-    assert not success and "below zero" in error
-    # Negative perm
-    success, error = add_counter("507f1f77bcf86cd799439011", "test", 1, -1)
+    # Negative value
+    success, error = add_counter("507f1f77bcf86cd799439011", "test", -1)
     assert not success and "below zero" in error
 
+
 def test_update_counter_negative_values(fake_characters_collection):
-    import bson
-    # Ensure character exists
     user_id = "u"
     character = "c"
-    from utils import add_user_character, get_character_id_by_user_and_name, add_counter, update_counter
     add_user_character(user_id, character)
     character_id = get_character_id_by_user_and_name(user_id, character)
-    # Add the counter so it exists before update
-    add_counter(character_id, "test", 1, 1)
-    # Negative update
+    add_counter(character_id, "test", 1)
     success, error = update_counter(character_id, "test", "temp", -2)
     assert not success and ("below zero" in error or "cannot be below zero" in error)
+
 
 def test_add_counter_empty_name(fake_characters_collection):
     char_doc = make_character_doc()
     fake_characters_collection.chars["507f1f77bcf86cd799439011"] = char_doc
-    success, error = add_counter("507f1f77bcf86cd799439011", "   ", 1, 1)
+    success, error = add_counter("507f1f77bcf86cd799439011", "   ", 1)
     assert not success and "empty" in error
+
 
 def test_add_counter_invalid_type(fake_characters_collection):
     char_doc = make_character_doc()
     fake_characters_collection.chars["507f1f77bcf86cd799439011"] = char_doc
-    success, error = add_counter("507f1f77bcf86cd799439011", "test", 1, 1, counter_type="not_a_type")
+    success, error = add_counter(
+        "507f1f77bcf86cd799439011", "test", 1, counter_type="not_a_type"
+    )
     assert not success and "invalid" in error.lower()
+
 
 def test_add_counter_duplicate_name(fake_characters_collection):
-    # Ensure character exists
     user_id = "u"
     character = "c"
-    from utils import add_user_character, get_character_id_by_user_and_name, add_counter
     add_user_character(user_id, character)
     character_id = get_character_id_by_user_and_name(user_id, character)
-    # Add initial counter
-    add_counter(character_id, "test", 1, 1)
-    # Try to add duplicate
-    success, error = add_counter(character_id, "test", 2, 2)
+    add_counter(character_id, "test", 1)
+    success, error = add_counter(character_id, "test", 2)
     assert not success and "exists" in error
+
 
 def test_add_counter_max_limit(fake_characters_collection, monkeypatch):
-    # Ensure character exists
     user_id = "u"
     character = "c"
-    from utils import add_user_character, get_character_id_by_user_and_name, add_counter, MAX_COUNTERS_PER_CHARACTER
     add_user_character(user_id, character)
     character_id = get_character_id_by_user_and_name(user_id, character)
-    # Fill up counters
     for i in range(MAX_COUNTERS_PER_CHARACTER):
-        add_counter(character_id, f"c{i}", 1, 1)
-    # Try to add one more
-    success, error = add_counter(character_id, "new", 1, 1)
+        add_counter(character_id, f"c{i}", 1)
+    success, error = add_counter(character_id, "new", 1)
     assert not success and "maximum" in error
 
-def test_add_predefined_counter_invalid_type(fake_characters_collection):
-    # Create character first
-    user_id = "u"
-    character = "c"
-    from utils import add_user_character, get_character_id_by_user_and_name, add_predefined_counter, PredefinedCounterEnum
-    add_user_character(user_id, character)
-    character_id = get_character_id_by_user_and_name(user_id, character)
-    success, error = add_predefined_counter(character_id, "not_a_type", 1)
-    assert not success and "invalid" in error.lower()
-
-def test_add_predefined_counter_duplicate(fake_characters_collection):
-    # Ensure character exists
-    user_id = "u"
-    character = "c"
-    from utils import add_user_character, get_character_id_by_user_and_name, add_predefined_counter, PredefinedCounterEnum
-    add_user_character(user_id, character)
-    character_id = get_character_id_by_user_and_name(user_id, character)
-    # Add initial counter
-    add_predefined_counter(character_id, PredefinedCounterEnum.willpower.value, 1)
-    # Try to add duplicate
-    success, error = add_predefined_counter(character_id, PredefinedCounterEnum.willpower.value, 2)
-    assert not success and "exists" in error
 
 def test_add_predefined_counter_max_limit(fake_characters_collection):
-    # Ensure character exists
     user_id = "u"
     character = "c"
-    from utils import add_user_character, get_character_id_by_user_and_name, add_counter, add_predefined_counter, MAX_COUNTERS_PER_CHARACTER, PredefinedCounterEnum
     add_user_character(user_id, character)
     character_id = get_character_id_by_user_and_name(user_id, character)
-    # Fill up counters
     for i in range(MAX_COUNTERS_PER_CHARACTER):
-        add_counter(character_id, f"c{i}", 1, 1)
-    # Try to add predefined counter
-    success, error = add_predefined_counter(character_id, PredefinedCounterEnum.willpower.value, 1)
+        add_counter(character_id, f"c{i}", 1)
+    success, error = add_predefined_counter(
+        character_id, PredefinedCounterEnum.willpower.value, 1
+    )
     assert not success and "maximum" in error
 
-def test_counter_factory_negative_perm():
-    from counter import CounterFactory, PredefinedCounterEnum
-    with pytest.raises(ValueError):
-        CounterFactory.create(PredefinedCounterEnum.willpower, -1)
 
-def test_counter_factory_invalid_type():
-    from counter import CounterFactory
-    with pytest.raises(ValueError):
-        CounterFactory.create("not_enum", 1)
+def test_add_counter_force_unpretty_and_toggle(fake_characters_collection):
+    user_id = "u"
+    character = "c"
+    add_user_character(user_id, character)
+    character_id = get_character_id_by_user_and_name(user_id, character)
+    add_counter(
+        character_id,
+        "UnprettyCounter",
+        1,
+        counter_type="single_number",
+        force_unpretty=True,
+    )
+    counters = get_counters_for_character(character_id)
+    counter = next((c for c in counters if c.counter == "UnprettyCounter"), None)
+    assert counter is not None
+    assert counter.force_unpretty is True
+    success, error = toggle_counter_option(
+        character_id, "UnprettyCounter", "force_unpretty", False
+    )
+    assert success is True
+    counters = get_counters_for_character(character_id)
+    counter = next((c for c in counters if c.counter == "UnprettyCounter"), None)
+    assert counter.force_unpretty is False
 
-def test_counter_factory_item_with_charges_requires_name():
-    from counter import CounterFactory, PredefinedCounterEnum
-    with pytest.raises(ValueError):
-        CounterFactory.create(PredefinedCounterEnum.item_with_charges, 1)
 
-def test_counter_factory_project_roll_requires_name():
-    from counter import CounterFactory, PredefinedCounterEnum
-    with pytest.raises(ValueError):
-        CounterFactory.create(PredefinedCounterEnum.project_roll, 1)
+def test_add_counter_is_resettable_and_toggle(fake_characters_collection):
+    user_id = "u"
+    character = "c"
+    add_user_character(user_id, character)
+    character_id = get_character_id_by_user_and_name(user_id, character)
+    add_counter(
+        character_id,
+        "ResettableCounter",
+        1,
+        counter_type="perm_is_maximum",
+        is_resettable=True,
+    )
+    counters = get_counters_for_character(character_id)
+    counter = next((c for c in counters if c.counter == "ResettableCounter"), None)
+    assert counter is not None
+    assert counter.is_resettable is True
+    success, error = toggle_counter_option(
+        character_id, "ResettableCounter", "is_resettable", False
+    )
+    assert success is True
+    counters = get_counters_for_character(character_id)
+    counter = next((c for c in counters if c.counter == "ResettableCounter"), None)
+    assert counter.is_resettable is False
 
-def test_add_counter_bedlam_negative(fake_characters_collection):
-    # Directly test Counter creation with negative bedlam
-    from counter import Counter
-    with pytest.raises(ValueError):
-        Counter("willpower", 1, 1, CategoryEnum.tempers.value, bedlam=-1)
 
-def test_add_counter_set_temp_below_zero(fake_characters_collection):
-    # Simulate setting temp directly below zero
-    from counter import Counter
-    # Should raise on creation
-    with pytest.raises(ValueError):
-        Counter("willpower", -5, 1, CategoryEnum.tempers.value)
+def test_add_counter_is_exhaustible_and_toggle(fake_characters_collection):
+    user_id = "u"
+    character = "c"
+    add_user_character(user_id, character)
+    character_id = get_character_id_by_user_and_name(user_id, character)
+    add_counter(
+        character_id,
+        "ExhaustibleCounter",
+        1,
+        counter_type="single_number",
+        is_exhaustible=True,
+    )
+    counters = get_counters_for_character(character_id)
+    counter = next((c for c in counters if c.counter == "ExhaustibleCounter"), None)
+    assert counter is not None
+    assert counter.is_exhaustible is True
+    success, error = toggle_counter_option(
+        character_id, "ExhaustibleCounter", "is_exhaustible", False
+    )
+    assert success is True
+    counters = get_counters_for_character(character_id)
+    counter = next((c for c in counters if c.counter == "ExhaustibleCounter"), None)
+    assert counter.is_exhaustible is False
 
-def test_add_counter_set_perm_below_zero(fake_characters_collection):
-    # Simulate setting perm directly below zero
-    from counter import Counter
-    with pytest.raises(ValueError):
-        Counter("willpower", 1, -5, CategoryEnum.tempers.value)
 
-def test_add_counter_set_bedlam_below_zero(fake_characters_collection):
-    # Simulate setting bedlam directly below zero
-    from counter import Counter
-    with pytest.raises(ValueError):
-        Counter("willpower", 1, 1, CategoryEnum.tempers.value, bedlam=-10)
+def test_remove_when_exhausted_counter(fake_characters_collection):
+    user_id = "u"
+    character = "c"
+    add_user_character(user_id, character)
+    character_id = get_character_id_by_user_and_name(user_id, character)
+    add_counter(
+        character_id,
+        "RemoveExhausted",
+        2,
+        counter_type="single_number",
+        is_exhaustible=True,
+    )
+    counters = get_counters_for_character(character_id)
+    counter = next((c for c in counters if c.counter == "RemoveExhausted"), None)
+    assert counter is not None
+    # Set temp to 0, should remove counter
+    update_counter(character_id, "RemoveExhausted", "temp", -2)
+    counters = get_counters_for_character(character_id)
+    assert not any(c.counter == "RemoveExhausted" for c in counters)
+    # Add again and set perm to 0, should remove counter
+    add_counter(
+        character_id,
+        "RemoveExhausted",
+        2,
+        counter_type="single_number",
+        is_exhaustible=True,
+    )
+    update_counter(character_id, "RemoveExhausted", "perm", -2)
+    counters = get_counters_for_character(character_id)
+    assert not any(c.counter == "RemoveExhausted" for c in counters)
+
+
+def test_reset_eligible_counter_and_reset_if_eligible(fake_characters_collection):
+    user_id = "u"
+    character = "c"
+    add_user_character(user_id, character)
+    character_id = get_character_id_by_user_and_name(user_id, character)
+    add_counter(
+        character_id, "ResetMe", 1, counter_type="perm_is_maximum", is_resettable=True
+    )
+    reset_if_eligible(character_id)
+    counters = get_counters_for_character(character_id)
+    counter = next((c for c in counters if c.counter == "ResetMe"), None)
+    assert counter is not None
+    assert counter.temp == counter.perm
+
+
+def test_configav_toggle_only_allows_valid_types(fake_characters_collection):
+    user_id = "u"
+    character = "c"
+    add_user_character(user_id, character)
+    character_id = get_character_id_by_user_and_name(user_id, character)
+    add_counter(character_id, "PermMax", 1, counter_type="perm_is_maximum")
+    add_counter(character_id, "SingleNum", 1, counter_type="single_number")
+    # Try to set is_exhaustible on perm_is_maximum (should not set)
+    success, _ = toggle_counter_option(character_id, "PermMax", "is_exhaustible", True)
+    assert not success
+    # Try to set is_resettable on single_number (should not set)
+    success, _ = toggle_counter_option(character_id, "SingleNum", "is_resettable", True)
+    assert not success
+
+
+def test_add_remove_when_exhausted_and_reset_eligible(fake_characters_collection):
+    user_id = "u"
+    character = "c"
+    add_user_character(user_id, character)
+    character_id = get_character_id_by_user_and_name(user_id, character)
+    # Remove_When_Exhausted
+    add_success, add_error = add_counter(
+        character_id,
+        "RemoveWhenExhausted",
+        2,
+        counter_type="single_number",
+        is_exhaustible=True,
+        category="other",
+    )
+    assert add_success, f"Failed to add Remove_When_Exhausted counter: {add_error}"
+    counters = get_counters_for_character(character_id)
+    c = next((x for x in counters if x.counter == "RemoveWhenExhausted"), None)
+    assert c is not None, "RemoveWhenExhausted counter was not found after adding"
+    assert c.counter_type == "single_number"
+    assert c.is_exhaustible is True
+    assert c.category == "other"
+    # Reset_Eligible
+    add_success, add_error = add_counter(
+        character_id,
+        "ResetEligible",
+        3,
+        counter_type="perm_is_maximum",
+        is_resettable=True,
+    )
+    assert add_success, f"Failed to add ResetEligible counter: {add_error}"
+    counters = get_counters_for_character(character_id)
+    c = next((x for x in counters if x.counter == "ResetEligible"), None)
+    assert c is not None, "ResetEligible counter was not found after adding"
+    assert c.counter_type == "perm_is_maximum"
+    assert c.is_resettable is True

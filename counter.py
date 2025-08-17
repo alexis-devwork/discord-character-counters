@@ -1,5 +1,6 @@
 import enum
 
+
 class UserCharacter:
     def __init__(self, user, character, counters=None, health=None, id=None):
         self.user = user
@@ -15,16 +16,15 @@ class UserCharacter:
             character=d.get("character"),
             counters=[Counter.from_dict(c) for c in d.get("counters", [])],
             health=d.get("health", []),
-            id=str(d.get("_id")) if d.get("_id") else None
+            id=str(d.get("_id")) if d.get("_id") else None,
         )
+
 
 class CounterTypeEnum(enum.Enum):
     single_number = "single_number"
     perm_is_maximum = "perm_is_maximum"
     perm_is_maximum_bedlam = "perm_is_maximum_bedlam"
     perm_not_maximum = "perm_not_maximum"
-    xp = "xp"
-    health = "health"
 
 
 class PredefinedCounterEnum(enum.Enum):
@@ -52,10 +52,22 @@ class CategoryEnum(enum.Enum):
     items = "items"
     other = "other"
     projects = "projects"
-    xp = "xp"
+
 
 class Counter:
-    def __init__(self, counter, temp, perm, category, comment=None, bedlam=0, counter_type="single_number"):
+    def __init__(
+        self,
+        counter,
+        temp,
+        perm,
+        category,
+        comment=None,
+        bedlam=0,
+        counter_type="single_number",
+        force_unpretty=False,
+        is_resettable=None,
+        is_exhaustible=None,
+    ):
         # Prevent negative values
         if temp is not None and temp < 0:
             raise ValueError("temp cannot be below zero")
@@ -63,14 +75,24 @@ class Counter:
             raise ValueError("perm cannot be below zero")
         if bedlam is not None and bedlam < 0:
             raise ValueError("bedlam cannot be below zero")
+        # For single_number type, always keep temp and perm equal
+        if counter_type == CounterTypeEnum.single_number.value:
+            if temp is not None and perm is not None and temp != perm:
+                perm = temp
+            elif temp is not None:
+                perm = temp
+            elif perm is not None:
+                temp = perm
         # For perm_is_maximum and perm_is_maximum_bedlam, temp cannot exceed perm
         if counter_type in ["perm_is_maximum", "perm_is_maximum_bedlam"]:
             if temp is not None and perm is not None and temp > perm:
-                raise ValueError("temp cannot be greater than perm for this counter type")
+                temp = perm  # Always set temp to perm
         # For perm_is_maximum_bedlam, bedlam cannot exceed perm
         if counter_type == "perm_is_maximum_bedlam":
             if bedlam is not None and perm is not None and bedlam > perm:
-                raise ValueError("bedlam cannot be greater than perm for this counter type")
+                raise ValueError(
+                    "bedlam cannot be greater than perm for this counter type"
+                )
         self.counter = counter
         self.temp = temp
         self.perm = perm
@@ -78,6 +100,19 @@ class Counter:
         self.comment = comment
         self.bedlam = bedlam
         self.counter_type = counter_type
+        self.force_unpretty = force_unpretty
+        # Only allow is_resettable for perm_is_maximum
+        self.is_resettable = (
+            is_resettable
+            if counter_type == CounterTypeEnum.perm_is_maximum.value
+            else None
+        )
+        # Only allow is_exhaustible for single_number
+        self.is_exhaustible = (
+            is_exhaustible
+            if counter_type == CounterTypeEnum.single_number.value
+            else None
+        )
 
     @classmethod
     def from_dict(cls, d):
@@ -88,10 +123,15 @@ class Counter:
             category=d.get("category", "general"),
             comment=d.get("comment", ""),
             bedlam=d.get("bedlam", 0),
-            counter_type=d.get("counter_type", "single_number")
+            counter_type=d.get("counter_type", "single_number"),
+            force_unpretty=d.get("force_unpretty", False),
+            is_resettable=d.get("is_resettable", None),
+            is_exhaustible=d.get("is_exhaustible", None),
         )
 
     def generate_display(self, fully_unescape_func, display_pretty):
+        if getattr(self, "force_unpretty", False):
+            return self.generate_display_basic(fully_unescape_func)
         if display_pretty:
             return self.generate_display_pretty(fully_unescape_func)
         return self.generate_display_basic(fully_unescape_func)
@@ -104,9 +144,11 @@ class Counter:
             spent_pts = self.perm - self.temp
             unspent_bedlam = self.bedlam - spent_pts if spent_pts < self.bedlam else 0
             base = f"{base} (bedlam: {unspent_bedlam}/{self.bedlam})"
+        elif self.counter_type == CounterTypeEnum.single_number.value:
+            base = f"{fully_unescape_func(self.counter)}:\n{self.temp}"
         # Add comment if present
         if self.comment:
-            base = f"{base}\n-# {self.comment}"
+            base = f"{base}\n-# {fully_unescape_func(self.comment)}"
         return base
 
     def generate_display_pretty(self, fully_unescape_func):
@@ -121,7 +163,7 @@ class Counter:
 
         # Only handle counters with perm <= 15
         if self.perm > 15:
-            pretty = self.generate_display_basic(fully_unescape_func)
+            return self.generate_display_basic(fully_unescape_func)
         # Handle perm_not_maximum type counters
         elif self.counter_type == CounterTypeEnum.perm_not_maximum.value:
             stop_buttons = " ".join([":stop_button:"] * self.perm)
@@ -141,7 +183,7 @@ class Counter:
         # Handle perm_is_maximum_bedlam type counters
         elif self.counter_type == CounterTypeEnum.perm_is_maximum_bedlam.value:
             # Ensure bedlam value is valid
-            if not hasattr(self, 'bedlam') or self.bedlam is None:
+            if not hasattr(self, "bedlam") or self.bedlam is None:
                 self.bedlam = 0
 
             # Create the list of dictionaries representing each square
@@ -164,12 +206,46 @@ class Counter:
                     squares.append(":red_square:")
 
             pretty = f"{counter_name}\n{' '.join(squares)}"
-            if self.comment:
-                pretty = f"{pretty}\n-# {self.comment}"
         # Default case for other counter types
+        elif self.counter_type == CounterTypeEnum.single_number.value:
+            negative_marks = " ".join([":large_blue_diamond:"] * self.temp)
+            pretty = f"{counter_name}\n{negative_marks}"
         else:
-            pretty = self.generate_display(fully_unescape_func, False)
+            return self.generate_display(fully_unescape_func, False)
+
+        # Add comment if present (for all counter types)
+        if self.comment:
+            pretty = f"{pretty}\n-# {fully_unescape_func(self.comment)}"
+
         return pretty
+
+    def apply_delta(self, field, delta):
+        """
+        For single_number type, increment/decrement both temp and perm together.
+        For other types, increment/decrement only the specified field.
+        Returns (success: bool, error: str or None)
+        """
+        if self.counter_type == CounterTypeEnum.single_number.value:
+            new_value = getattr(self, field) + delta
+            if new_value < 0:
+                return False, f"{field} cannot be below zero"
+            self.temp = new_value
+            self.perm = new_value
+            return True, None
+        else:
+            new_value = getattr(self, field) + delta
+            if new_value < 0:
+                return False, f"{field} cannot be below zero"
+            setattr(self, field, new_value)
+            # For perm_is_maximum types, cap temp to perm if needed
+            if field == "perm" and self.counter_type in [
+                CounterTypeEnum.perm_is_maximum.value,
+                CounterTypeEnum.perm_is_maximum_bedlam.value,
+            ]:
+                if self.temp > self.perm:
+                    self.temp = self.perm
+            return True, None
+
 
 class CounterFactory:
     @staticmethod
@@ -189,9 +265,14 @@ class CounterFactory:
             raise ValueError("perm cannot be below zero")
         name = override_name if override_name else counter_type.value
         # Require name for project_roll and item_with_charges
-        if counter_type in (PredefinedCounterEnum.project_roll, PredefinedCounterEnum.item_with_charges):
+        if counter_type in (
+            PredefinedCounterEnum.project_roll,
+            PredefinedCounterEnum.item_with_charges,
+        ):
             if not override_name:
-                raise ValueError("A name must be provided for project_roll and item_with_charges counters.")
+                raise ValueError(
+                    "A name must be provided for project_roll and item_with_charges counters."
+                )
         match counter_type:
             case PredefinedCounterEnum.glory:
                 return CounterFactory.create_glory(perm, comment, name)
@@ -235,7 +316,7 @@ class CounterFactory:
             perm=perm,
             counter_type=CounterTypeEnum.perm_is_maximum.value,
             category=CategoryEnum.tempers.value,
-            comment=comment
+            comment=comment,
         )
 
     @staticmethod
@@ -248,7 +329,7 @@ class CounterFactory:
             perm=perm,
             counter_type=CounterTypeEnum.perm_is_maximum.value,
             category=CategoryEnum.general.value,
-            comment=comment
+            comment=comment,
         )
 
     @staticmethod
@@ -261,7 +342,7 @@ class CounterFactory:
             perm=perm,
             counter_type=CounterTypeEnum.perm_is_maximum.value,
             category=CategoryEnum.general.value,
-            comment=comment
+            comment=comment,
         )
 
     @staticmethod
@@ -275,7 +356,7 @@ class CounterFactory:
             bedlam=0,
             counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value,
             category=CategoryEnum.tempers.value,
-            comment=comment
+            comment=comment,
         )
 
     @staticmethod
@@ -288,7 +369,7 @@ class CounterFactory:
             perm=perm,
             counter_type=CounterTypeEnum.perm_is_maximum.value,
             category=CategoryEnum.tempers.value,
-            comment=comment
+            comment=comment,
         )
 
     @staticmethod
@@ -300,7 +381,7 @@ class CounterFactory:
             perm=10,
             counter_type=CounterTypeEnum.perm_is_maximum.value,
             category=CategoryEnum.tempers.value,
-            comment=comment
+            comment=comment,
         )
 
     @staticmethod
@@ -313,7 +394,7 @@ class CounterFactory:
             perm=perm,
             counter_type=CounterTypeEnum.perm_not_maximum.value,
             category=CategoryEnum.tempers.value,
-            comment=comment
+            comment=comment,
         )
 
     @staticmethod
@@ -326,7 +407,7 @@ class CounterFactory:
             perm=perm,
             counter_type=CounterTypeEnum.perm_not_maximum.value,
             category=CategoryEnum.reknown.value,
-            comment=comment
+            comment=comment,
         )
 
     @staticmethod
@@ -339,7 +420,7 @@ class CounterFactory:
             perm=perm,
             counter_type=CounterTypeEnum.perm_not_maximum.value,
             category=CategoryEnum.reknown.value,
-            comment=comment
+            comment=comment,
         )
 
     @staticmethod
@@ -352,7 +433,7 @@ class CounterFactory:
             perm=perm,
             counter_type=CounterTypeEnum.perm_not_maximum.value,
             category=CategoryEnum.reknown.value,
-            comment=comment
+            comment=comment,
         )
 
     @staticmethod
@@ -365,7 +446,7 @@ class CounterFactory:
             perm=perm,
             counter_type=CounterTypeEnum.perm_not_maximum.value,
             category=CategoryEnum.tempers.value,
-            comment=comment
+            comment=comment,
         )
 
     @staticmethod
@@ -378,7 +459,7 @@ class CounterFactory:
             perm=perm,
             counter_type=CounterTypeEnum.perm_is_maximum.value,
             category=CategoryEnum.tempers.value,
-            comment=comment
+            comment=comment,
         )
 
     @staticmethod
@@ -393,7 +474,7 @@ class CounterFactory:
             perm=perm,
             counter_type=CounterTypeEnum.perm_is_maximum.value,
             category=CategoryEnum.items.value,
-            comment=comment
+            comment=comment,
         )
 
     @staticmethod
@@ -408,7 +489,7 @@ class CounterFactory:
             perm=perm,
             counter_type=CounterTypeEnum.perm_not_maximum.value,
             category=CategoryEnum.projects.value,
-            comment=comment
+            comment=comment,
         )
 
 
