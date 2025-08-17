@@ -308,7 +308,7 @@ def register_edit_commands(cog):
             )
 
     # --- Rename counter ---
-    @cog.rename_group.command(
+    @cog.edit_group.command(
         name="counter", description="Rename a counter for a character"
     )
     @discord.app_commands.autocomplete(
@@ -318,24 +318,41 @@ def register_edit_commands(cog):
     async def rename_counter_cmd(
         interaction: discord.Interaction, character: str, counter: str, new_name: str
     ):
+        character = sanitize_string(character)
+        character = sanitize_string(character)
         user_id = str(interaction.user.id)
         character_id = get_character_id_by_user_and_name(user_id, character)
         if character_id is None:
             await handle_character_not_found(interaction)
             return
+        # Clean up counter name
+        counter = sanitize_string(counter)
+        new_name = sanitize_string(new_name)
 
+
+        counter = sanitize_string(counter)
+        new_name = sanitize_string(new_name)
+                f"Counter '{counter}' renamed to '{new_name}' for character '{character}'.",
         success, error = rename_counter(character_id, counter, new_name)
-
         if success:
             await interaction.response.send_message(
-                f"Counter '{counter}' on character '{character}' renamed to '{new_name}'.",
-                ephemeral=True,
-            )
-        else:
-            await handle_counter_not_found(
-                interaction
-            ) if error == "Counter to rename not found." else interaction.response.send_message(
-                error or "Failed to rename counter.", ephemeral=True
+            # Make sure we're handling any possible error
+            try:
+                await interaction.response.send_message(
+                    f"Failed to rename counter: {error}", ephemeral=True
+                )
+            except Exception as e:
+                # If the response has already been sent, try a followup
+                try:
+                    await interaction.followup.send(
+                        f"Failed to rename counter: {error}", ephemeral=True
+                    )
+                except Exception:
+                    # Last resort - just print to console
+                    print(f"Failed to send error message: {e}")
+                    print(f"Original error: {error}")
+            await interaction.response.send_message(
+                f"Failed to rename counter: {error}", ephemeral=True
             )
 
     # --- Rename character ---

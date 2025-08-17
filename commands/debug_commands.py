@@ -21,6 +21,7 @@ def register_debug_commands(cog):
             for c in char.get("counters", []):
                 debug_lines.append(
                     f"  Counter: {c.get('counter')} | temp: {c.get('temp')} | perm: {c.get('perm')} | type: {c.get('counter_type')} | category: {c.get('category')} | comment: {c.get('comment', None)} | bedlam: {c.get('bedlam', None)}"
+                    f" | force_unpretty: {c.get('force_unpretty', None)} | is_resettable: {c.get('is_resettable', None)} | is_exhaustible: {c.get('is_exhaustible', None)}"
                 )
             for h in char.get("health", []):
                 debug_lines.append(f"  Health ({h.get('health_type', None)}):")

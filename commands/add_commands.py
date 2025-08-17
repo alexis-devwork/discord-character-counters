@@ -11,6 +11,7 @@ from utils import (
     display_character_counters,  # Import the display function
     fully_unescape,
 )
+from counter import CounterTypeEnum  # Ensure correct import
 from utils import characters_collection, CharacterRepository
 from health import Health, HealthTypeEnum, HealthLevelEnum
 from bson import ObjectId
@@ -290,6 +291,7 @@ def register_add_commands(cog):
     @app_commands.autocomplete(
         character=character_name_autocomplete,
         counter_type=predefined_counter_type_autocomplete,
+        # item_or_project_name autocomplete is not needed; it's a free text field
     )
     async def add_counter_cmd(
         interaction: discord.Interaction,
@@ -297,7 +299,7 @@ def register_add_commands(cog):
         counter_type: str,
         value: int = None,
         comment: str = None,
-        name_override: str = None,
+        item_or_project_name: str = None,  # Renamed from name_override
     ):
         character = sanitize_string(character)
         user_id = str(interaction.user.id)
@@ -310,7 +312,7 @@ def register_add_commands(cog):
 
         # Handle Remove_When_Exhausted special case
         if counter_type == "Remove_When_Exhausted":
-            if not name_override:
+            if not item_or_project_name:
                 await interaction.response.send_message(
                     "You must specify a counter name for Remove_When_Exhausted.",
                     ephemeral=True,
@@ -320,16 +322,19 @@ def register_add_commands(cog):
 
             success, error = add_counter(
                 character_id,
-                name_override,
+                item_or_project_name,
                 value if value is not None else 0,
                 category="other",
                 comment=comment,
-                counter_type="single_number",
+                counter_type=CounterTypeEnum.single_number.value,  # Use the string value
                 is_exhaustible=True,
             )
             if success:
+                # Show updated display after adding
+                from utils import display_character_counters, fully_unescape
+                msg = display_character_counters(character_id, fully_unescape)
                 await interaction.response.send_message(
-                    f"Remove_When_Exhausted counter '{name_override}' added to character '{character}'.",
+                    f"Remove_When_Exhausted counter '{item_or_project_name}' added to character '{character}'.\n\n{msg}",
                     ephemeral=True,
                 )
             else:
@@ -340,7 +345,7 @@ def register_add_commands(cog):
 
         # Handle Reset_Eligible special case
         if counter_type == "Reset_Eligible":
-            if not name_override:
+            if not item_or_project_name:
                 await interaction.response.send_message(
                     "You must specify a counter name for Reset_Eligible.",
                     ephemeral=True,
@@ -350,16 +355,19 @@ def register_add_commands(cog):
 
             success, error = add_counter(
                 character_id,
-                name_override,
+                item_or_project_name,
                 value if value is not None else 0,
                 category="other",
                 comment=comment,
-                counter_type="perm_is_maximum",
+                counter_type=CounterTypeEnum.perm_is_maximum.value,  # Use the string value
                 is_resettable=True,
             )
             if success:
+                # Show updated display after adding
+                from utils import display_character_counters, fully_unescape
+                msg = display_character_counters(character_id, fully_unescape)
                 await interaction.response.send_message(
-                    f"Reset_Eligible counter '{name_override}' added to character '{character}'.",
+                    f"Reset_Eligible counter '{item_or_project_name}' added to character '{character}'.\n\n{msg}",
                     ephemeral=True,
                 )
             else:
@@ -377,54 +385,41 @@ def register_add_commands(cog):
             )
             return
 
-        # Determine override name
-        override_name = _determine_override_name(counter_enum, name_override)
-        if override_name == "REQUIRED_BUT_MISSING":
-            await interaction.response.send_message(
-                "You must specify a counter name for this type.", ephemeral=True
-            )
-            return
+        # Only require item_or_project_name for item_with_charges and project_roll
+        if counter_enum in (
+            PredefinedCounterEnum.item_with_charges,
+            PredefinedCounterEnum.project_roll,
+        ):
+            if not item_or_project_name:
+                await interaction.response.send_message(
+                    "You must specify a counter name for this type.", ephemeral=True
+                )
+                return
+            override_name = item_or_project_name
+        elif counter_enum == PredefinedCounterEnum.willpower_fae:
+            override_name = "willpower"
+        else:
+            override_name = None
 
         # Add the counter
         success, error = add_predefined_counter(
             character_id, counter_enum.value, value, comment, override_name
         )
 
-        # Handle result
+        # Handle result and display character counters
+        from utils import display_character_counters, fully_unescape
+
+        msg = display_character_counters(character_id, fully_unescape)
         if success:
             await interaction.response.send_message(
-                f"{counter_type.title()} counter added to character '{character}'.",
+                f"{counter_type.title()} counter added to character '{character}'.\n\n{msg}",
                 ephemeral=True,
             )
         else:
             await interaction.response.send_message(
-                error or "Failed to add counter.", ephemeral=True
+                f"{error or 'Failed to add counter.'}\n\n{msg}",
+                ephemeral=True,
             )
-
-    def _determine_override_name(counter_enum, name_override):
-        """Determine the override name for a counter based on its type."""
-        # Require name_override for project_roll and item_with_charges
-        if counter_enum in (
-            PredefinedCounterEnum.project_roll,
-            PredefinedCounterEnum.item_with_charges,
-        ):
-            if not name_override:
-                return "REQUIRED_BUT_MISSING"
-            return name_override
-
-        # Use name_override for glory, honor, wisdom if provided
-        if (
-            counter_enum
-            in (
-                PredefinedCounterEnum.glory,
-                PredefinedCounterEnum.honor,
-                PredefinedCounterEnum.wisdom,
-            )
-            and name_override
-        ):
-            return name_override
-
-        return None
 
     # --- Add health command ---
     @cog.add_group.command(

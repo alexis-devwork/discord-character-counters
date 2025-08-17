@@ -107,6 +107,10 @@ async def damage_type_autocomplete(interaction: discord.Interaction, current: st
 
 
 async def counter_type_autocomplete(interaction: discord.Interaction, current: str):
+    # Only show name_override input if item_with_charges or project_roll is selected
+    getattr(interaction.namespace, "counter_type", None)
+    # This function controls the autocomplete for counter_type, not name_override.
+    # UI logic should only show the name_override field if selected_type is in allowed_types.
     return enum_autocomplete(CounterTypeEnum, current)
 
 
