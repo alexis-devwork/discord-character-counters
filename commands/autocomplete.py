@@ -27,11 +27,22 @@ def counter_name_autocomplete_helper(interaction, current, filter_func=None):
     if character_id is None:
         return []
     counters = get_counters_for_character(character_id)
+
+    # Check if this is a remove command - include invalid_counter type for remove commands only
+    command_name = getattr(interaction.command, "name", "")
+    parent_name = (
+        getattr(interaction.command.parent, "name", "")
+        if interaction.command.parent
+        else ""
+    )
+    is_remove_command = command_name == "counter" and parent_name == "remove"
+
     filtered = [
         c.counter
         for c in counters
         if (filter_func(c) if filter_func else True)
         and current.lower() in c.counter.lower()
+        and (is_remove_command or c.counter_type != "invalid_counter")
     ]
     unique_counters = list(dict.fromkeys(filtered))
     return [
@@ -123,15 +134,21 @@ async def toggle_counter_autocomplete(interaction: discord.Interaction, current:
     if character_id is None:
         return []
     counters = get_counters_for_character(character_id)
-    # Filter by toggle type
+    # Filter by toggle type and exclude invalid_counter type
     if toggle == "force_unpretty":
-        filtered = [c.counter for c in counters if current.lower() in c.counter.lower()]
+        filtered = [
+            c.counter
+            for c in counters
+            if current.lower() in c.counter.lower()
+            and c.counter_type != "invalid_counter"
+        ]
     elif toggle == "is_resettable":
         filtered = [
             c.counter
             for c in counters
             if c.counter_type == "perm_is_maximum"
             and current.lower() in c.counter.lower()
+            and c.counter_type != "invalid_counter"
         ]
     elif toggle == "is_exhaustible":
         filtered = [
@@ -139,6 +156,7 @@ async def toggle_counter_autocomplete(interaction: discord.Interaction, current:
             for c in counters
             if c.counter_type == "single_number"
             and current.lower() in c.counter.lower()
+            and c.counter_type != "invalid_counter"
         ]
     else:
         filtered = []
