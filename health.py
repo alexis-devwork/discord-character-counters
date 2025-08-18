@@ -7,8 +7,8 @@ class HealthTypeEnum(enum.Enum):
 
 
 class DamageEnum(enum.Enum):
-    Lethal = "Lethal"
     Aggravated = "Aggravated"
+    Lethal = "Lethal"
     Bashing = "Bashing"
 
 
@@ -82,6 +82,17 @@ class Health:
         to_add = min(levels, available_slots)
         if to_add > 0 and available_slots > 0:
             self.damage = [damage_type.value] * to_add + self.damage
+            # Sort damage by severity, with Aggravated first, then Lethal, then Bashing
+            # Use a list of specific order instead of enum to ensure consistent sorting
+            damage_order = {
+                DamageEnum.Aggravated.value: 0,
+                DamageEnum.Lethal.value: 1,
+                DamageEnum.Bashing.value: 2,
+            }
+            # Use a stable sort to preserve the relative order of duplicate entries
+            self.damage = sorted(
+                self.damage, key=lambda d: damage_order.get(d, float("inf"))
+            )
         # If no slots are available, do not modify self.damage
         return to_add, levels - to_add
 
@@ -104,6 +115,18 @@ class Health:
                     # Both bashing and lethal upgrade bashing to lethal
                     self.damage[i] = DamageEnum.Lethal.value
                 converted += 1
+
+        # Sort damage after conversion to maintain consistent order
+        if converted > 0:
+            damage_order = {
+                DamageEnum.Aggravated.value: 0,
+                DamageEnum.Lethal.value: 1,
+                DamageEnum.Bashing.value: 2,
+            }
+            self.damage = sorted(
+                self.damage, key=lambda d: damage_order.get(d, float("inf"))
+            )
+
         not_taken = remaining - converted
         return converted, not_taken
 
