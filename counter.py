@@ -25,6 +25,7 @@ class CounterTypeEnum(enum.Enum):
     perm_is_maximum = "perm_is_maximum"
     perm_is_maximum_bedlam = "perm_is_maximum_bedlam"
     perm_not_maximum = "perm_not_maximum"
+    invalid_counter = "invalid_counter"
 
 
 class PredefinedCounterEnum(enum.Enum):
