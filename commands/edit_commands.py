@@ -505,7 +505,9 @@ def register_edit_commands(cog):
             # Safe to proceed, update both temp and perm
             target.temp -= points
             target.perm = target.temp
-            counters = update_counter_in_db(character_id, counter, "temp", target.temp, target)
+            counters = update_counter_in_db(
+                character_id, counter, "temp", target.temp, target
+            )
             msg = generate_counters_output(counters, fully_unescape)
             await interaction.response.send_message(
                 f"Removed {points} point(s) from counter '{counter}' on character '{character}'.\n"

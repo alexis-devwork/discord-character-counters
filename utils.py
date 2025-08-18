@@ -203,7 +203,7 @@ def add_counter(
     force_unpretty: bool = False,
     is_resettable: bool = None,
     is_exhaustible: bool = None,
-    bedlam: int = 0
+    bedlam: int = 0,
 ):
     # Prevent empty or whitespace-only counter names
     if counter_name is None or str(counter_name).strip() == "":
@@ -318,7 +318,7 @@ def add_counter(
         )
 
         # Check if there was a bedlam error
-        if hasattr(new_counter, 'bedlam_error') and new_counter.bedlam_error:
+        if hasattr(new_counter, "bedlam_error") and new_counter.bedlam_error:
             return False, new_counter.bedlam_error
 
         counters.append(new_counter.__dict__)
@@ -382,7 +382,10 @@ def update_counter(character_id: str, counter_name: str, field: str, delta: int)
                 # For perm_is_maximum_bedlam, ensure perm doesn't go below bedlam
                 if counter_type == "perm_is_maximum_bedlam":
                     if new_perm < c.get("bedlam", 0):
-                        return False, f"Perm cannot be set below bedlam ({c.get('bedlam', 0)})."
+                        return (
+                            False,
+                            f"Perm cannot be set below bedlam ({c.get('bedlam', 0)}).",
+                        )
                     c["perm"] = new_perm
                     c["temp"] = min(c["temp"], new_perm)
                 elif counter_type == "perm_is_maximum":

@@ -74,7 +74,8 @@ def register_character_commands(cog):
         if target.counter_type == CounterTypeEnum.perm_is_maximum_bedlam.value:
             if new_value < target.bedlam:
                 await interaction.response.send_message(
-                    f"Perm cannot be set below bedlam ({target.bedlam}).", ephemeral=True
+                    f"Perm cannot be set below bedlam ({target.bedlam}).",
+                    ephemeral=True,
                 )
                 return None, False
 
@@ -153,7 +154,9 @@ def register_character_commands(cog):
             if target.counter_type == CounterTypeEnum.single_number.value:
                 target.perm = adjusted_value
                 # Get character_id from the interaction namespace
-                character_id = get_character_id_by_user_and_name(str(interaction.user.id), character)
+                character_id = get_character_id_by_user_and_name(
+                    str(interaction.user.id), character
+                )
                 _update_counter_in_mongodb(
                     character_id, counter, "perm", target.perm, target
                 )
@@ -345,7 +348,8 @@ def register_character_commands(cog):
         if target.counter_type == CounterTypeEnum.perm_is_maximum_bedlam.value:
             if new_value < target.bedlam:
                 await interaction.response.send_message(
-                    f"Perm cannot be set below bedlam ({target.bedlam}).", ephemeral=True
+                    f"Perm cannot be set below bedlam ({target.bedlam}).",
+                    ephemeral=True,
                 )
                 return
 
@@ -411,14 +415,16 @@ def register_character_commands(cog):
         target = _get_bedlam_counter(counters, counter)
         if not target:
             await interaction.response.send_message(
-                "No perm_is_maximum_bedlam counter found with that name.", ephemeral=True
+                "No perm_is_maximum_bedlam counter found with that name.",
+                ephemeral=True,
             )
             return
 
         # Check if bedlam would exceed perm
         if new_value > target.perm:
             await interaction.response.send_message(
-                "Bedlam cannot be greater than perm for this counter type.", ephemeral=True
+                "Bedlam cannot be greater than perm for this counter type.",
+                ephemeral=True,
             )
             return
 

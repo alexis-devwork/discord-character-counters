@@ -91,7 +91,9 @@ class Counter:
         if counter_type == "perm_is_maximum_bedlam":
             if bedlam is not None and perm is not None and bedlam > perm:
                 # Change from raising ValueError to returning the error message
-                self.bedlam_error = "Bedlam cannot be greater than perm for this counter type"
+                self.bedlam_error = (
+                    "Bedlam cannot be greater than perm for this counter type"
+                )
                 # Set bedlam to perm as a fallback
                 bedlam = perm
             else:
