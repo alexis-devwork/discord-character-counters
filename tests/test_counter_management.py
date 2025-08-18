@@ -1,4 +1,3 @@
-import pytest
 from unittest.mock import patch
 
 # Import utilities
@@ -439,15 +438,22 @@ class TestCounterManagement:
             counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value,
         )
         assert c.temp == 5 and c.bedlam == 5
-        with pytest.raises(ValueError):
-            Counter(
-                "Test",
-                5,
-                5,
-                "general",
-                bedlam=6,
-                counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value,
-            )
+
+        # This test needs to be updated since we no longer raise ValueError
+        # Check that bedlam_error is set correctly instead
+        c = Counter(
+            "Test",
+            5,
+            5,
+            "general",
+            bedlam=6,
+            counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value,
+        )
+        assert (
+            c.bedlam_error == "Bedlam cannot be greater than perm for this counter type"
+        )
+        assert c.bedlam == 5  # Bedlam should be capped at perm
+
         c = Counter(
             "Test",
             5,
@@ -457,6 +463,7 @@ class TestCounterManagement:
             counter_type=CounterTypeEnum.perm_is_maximum_bedlam.value,
         )
         assert c.temp == 5 and c.bedlam == 5
+        assert c.bedlam_error is None  # No error when bedlam <= perm
 
     # Test updating a perm_is_maximum_bedlam counter
     def test_update_perm_is_maximum_bedlam_counter(self, test_characters_collection):

@@ -13,6 +13,7 @@ from utils import (
     update_counter_in_db,
     update_counter_comment,
     sanitize_string,
+    remove_counter,
 )
 from utils import CharacterRepository
 from bson import ObjectId
@@ -92,6 +93,18 @@ def register_edit_commands(cog):
     def _get_counter_by_name(counters, counter_name):
         """Get a counter by its name from a list of counters."""
         return next((c for c in counters if c.counter == counter_name), None)
+
+    def _get_bedlam_counter(counters, counter_name):
+        """Get a bedlam counter by its name from a list of counters."""
+        return next(
+            (
+                c
+                for c in counters
+                if c.counter == counter_name
+                and c.counter_type == CounterTypeEnum.perm_is_maximum_bedlam.value
+            ),
+            None,
+        )
 
     def _update_counter_in_mongodb(character_id, counter, target):
         # Deprecated: use update_counter_in_db from utils
@@ -370,6 +383,13 @@ def register_edit_commands(cog):
     async def plus_cmd(
         interaction: discord.Interaction, character: str, counter: str, points: int = 1
     ):
+        # Validate that points is a positive number
+        if points <= 0:
+            await interaction.response.send_message(
+                "Points must be a positive number.", ephemeral=True
+            )
+            return
+
         user_id = str(interaction.user.id)
         character_id = get_character_id_by_user_and_name(user_id, character)
         if character_id is None:
@@ -396,6 +416,19 @@ def register_edit_commands(cog):
             )
             return
 
+        # For single_number counters, set perm to the same value as temp
+        if target.counter_type == CounterTypeEnum.single_number.value:
+            target.temp += points
+            target.perm = target.temp
+            update_counter_in_db(character_id, counter, "temp", target.temp, target)
+            msg = _build_full_character_output(character_id)
+            await interaction.response.send_message(
+                f"Added {points} point(s) to counter '{counter}' on character '{character}'.\n\n"
+                f"{msg}",
+                ephemeral=True,
+            )
+            return
+
         success, error = update_counter(character_id, counter, "temp", points)
 
         if success:
@@ -411,4 +444,112 @@ def register_edit_commands(cog):
             else:
                 await interaction.response.send_message(
                     error or "Failed to add points to counter.", ephemeral=True
+                )
+
+    @cog.avct_group.command(name="minus", description="Remove points from a counter")
+    @discord.app_commands.autocomplete(
+        character=character_name_autocomplete,
+        counter=counter_name_autocomplete_for_character,
+    )
+    async def minus_cmd(
+        interaction: discord.Interaction, character: str, counter: str, points: int = 1
+    ):
+        # Validate that points is a positive number
+        if points <= 0:
+            await interaction.response.send_message(
+                "Points must be a positive number.", ephemeral=True
+            )
+            return
+
+        user_id = str(interaction.user.id)
+        character_id = get_character_id_by_user_and_name(user_id, character)
+        if character_id is None:
+            await handle_character_not_found(interaction)
+            return
+
+        # Get counter
+        counters = get_counters_for_character(character_id)
+        target = _get_counter_by_name(counters, counter)
+        if not target:
+            await handle_counter_not_found(interaction)
+            return
+
+        # Remove single_number counter with is_exhaustible if value would be 0 after decrement
+        if (
+            target.counter_type == CounterTypeEnum.single_number.value
+            and getattr(target, "is_exhaustible", False)
+            and (target.temp - points) == 0
+        ):
+            success, error, details = remove_counter(character_id, counter)
+            if success:
+                msg = details if details else "No remaining counters."
+                await interaction.response.send_message(
+                    f"Counter '{counter}' was removed from character '{character}' because its value reached 0.\nRemaining counters:\n{msg}",
+                    ephemeral=True,
+                )
+            else:
+                await handle_counter_not_found(
+                    interaction
+                ) if error == "Counter not found." else interaction.response.send_message(
+                    error or "Failed to remove counter.", ephemeral=True
+                )
+            return
+
+        # For single_number counters, check if value would go below zero
+        if target.counter_type == CounterTypeEnum.single_number.value:
+            if (target.temp - points) < 0:
+                await interaction.response.send_message(
+                    "Cannot set temp below zero.", ephemeral=True
+                )
+                return
+            # Safe to proceed, update both temp and perm
+            target.temp -= points
+            target.perm = target.temp
+            counters = update_counter_in_db(
+                character_id, counter, "temp", target.temp, target
+            )
+            msg = generate_counters_output(counters, fully_unescape)
+            await interaction.response.send_message(
+                f"Removed {points} point(s) from counter '{counter}' on character '{character}'.\n"
+                f"Counters for character '{character}':\n{msg}",
+                ephemeral=True,
+            )
+            return
+
+        # --- FIX: Handle Reset_Eligible (perm_is_maximum with is_resettable) ---
+        if target.counter_type == CounterTypeEnum.perm_is_maximum.value and getattr(
+            target, "is_resettable", False
+        ):
+            # Decrement temp, but do not allow below zero
+            new_temp = max(target.temp - points, 0)
+            target.temp = new_temp
+            # Save to DB
+            counters = update_counter_in_db(
+                character_id, counter, "temp", target.temp, target
+            )
+            msg = generate_counters_output(counters, fully_unescape)
+            await interaction.response.send_message(
+                f"Removed {points} point(s) from counter '{counter}' on character '{character}'.\n"
+                f"Counters for character '{character}':\n{msg}",
+                ephemeral=True,
+            )
+            return
+
+        # Default: update temp
+        success, error = update_counter(character_id, counter, "temp", -points)
+        if success:
+            msg = generate_counters_output(
+                get_counters_for_character(character_id), fully_unescape
+            )
+            await interaction.response.send_message(
+                f"Removed {points} point(s) from counter '{counter}' on character '{character}'.\n"
+                f"Counters for character '{character}':\n{msg}",
+                ephemeral=True,
+            )
+        else:
+            if error == "Counter not found.":
+                await handle_counter_not_found(interaction)
+            else:
+                await interaction.response.send_message(
+                    error or "Failed to remove points from counter.", ephemeral=True
                 )
