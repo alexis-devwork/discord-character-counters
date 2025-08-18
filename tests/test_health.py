@@ -1,6 +1,7 @@
 import pytest
 from utils import add_health_level
 from bson import ObjectId
+from health import Health, DamageEnum
 
 
 class FakeCharacterRepository:
@@ -95,3 +96,42 @@ def test_add_health_level_invalid_type(fake_character_repository):
     assert error == "Invalid health level type: InvalidLevel", (
         "Unexpected error message."
     )
+
+
+def test_add_damage_sorts_damage(fake_character_repository):
+    # Create a health object
+    health = Health(health_type="normal", health_levels=["Bruised", "Hurt", "Injured"])
+
+    # Add damage in a random order
+    health.add_damage(1, DamageEnum.Lethal)
+    health.add_damage(1, DamageEnum.Bashing)
+    health.add_damage(1, DamageEnum.Aggravated)
+
+    # Verify that damage is sorted in the order of DamageEnum
+    assert health.damage == [
+        DamageEnum.Aggravated.value,
+        DamageEnum.Lethal.value,
+        DamageEnum.Bashing.value,
+    ]
+
+
+def test_add_damage_preserves_duplicates_and_sorts(fake_character_repository):
+    # Create a health object with enough health levels to accommodate all damage
+    health = Health(
+        health_type="normal",
+        health_levels=["Bruised", "Hurt", "Injured", "Wounded", "Mauled"],
+    )
+
+    # Add duplicate damage types in a random order
+    health.add_damage(2, DamageEnum.Bashing)
+    health.add_damage(1, DamageEnum.Lethal)
+    health.add_damage(2, DamageEnum.Aggravated)
+
+    # Verify that duplicates are preserved and damage is sorted
+    assert health.damage == [
+        DamageEnum.Aggravated.value,
+        DamageEnum.Aggravated.value,
+        DamageEnum.Lethal.value,
+        DamageEnum.Bashing.value,
+        DamageEnum.Bashing.value,
+    ]
