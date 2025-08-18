@@ -69,6 +69,15 @@ def register_character_commands(cog):
                 "Cannot set perm below zero.", ephemeral=True
             )
             return None, False
+
+        # Check if counter is perm_is_maximum_bedlam and new_value would be less than bedlam
+        if target.counter_type == CounterTypeEnum.perm_is_maximum_bedlam.value:
+            if new_value < target.bedlam:
+                await interaction.response.send_message(
+                    f"Perm cannot be set below bedlam ({target.bedlam}).", ephemeral=True
+                )
+                return None, False
+
         return new_value, True
 
     async def _validate_new_bedlam_value(target, new_value, interaction):
@@ -143,8 +152,10 @@ def register_character_commands(cog):
             # If the counter type is single_number, also set perm to the same value
             if target.counter_type == CounterTypeEnum.single_number.value:
                 target.perm = adjusted_value
+                # Get character_id from the interaction namespace
+                character_id = get_character_id_by_user_and_name(str(interaction.user.id), character)
                 _update_counter_in_mongodb(
-                    target.character_id, counter, "perm", target.perm, target
+                    character_id, counter, "perm", target.perm, target
                 )
 
         elif field == "perm":
@@ -241,6 +252,13 @@ def register_character_commands(cog):
     async def temp(
         interaction: discord.Interaction, character: str, counter: str, new_value: int
     ):
+        # Validate that new_value is non-negative
+        if new_value < 0:
+            await interaction.response.send_message(
+                "Value must be a non-negative number.", ephemeral=True
+            )
+            return
+
         user_id = str(interaction.user.id)
         character_id = get_character_id_by_user_and_name(user_id, character)
         if character_id is None:
@@ -297,6 +315,13 @@ def register_character_commands(cog):
     async def perm(
         interaction: discord.Interaction, character: str, counter: str, new_value: int
     ):
+        # Validate that new_value is non-negative
+        if new_value < 0:
+            await interaction.response.send_message(
+                "Value must be a non-negative number.", ephemeral=True
+            )
+            return
+
         user_id = str(interaction.user.id)
         character_id = get_character_id_by_user_and_name(user_id, character)
         if character_id is None:
@@ -315,6 +340,14 @@ def register_character_commands(cog):
                 ephemeral=True,
             )
             return
+
+        # Check if the counter type is perm_is_maximum_bedlam and new_value < bedlam
+        if target.counter_type == CounterTypeEnum.perm_is_maximum_bedlam.value:
+            if new_value < target.bedlam:
+                await interaction.response.send_message(
+                    f"Perm cannot be set below bedlam ({target.bedlam}).", ephemeral=True
+                )
+                return
 
         # Remove single_number counter with is_exhaustible if value would be 0
         if (
@@ -362,37 +395,43 @@ def register_character_commands(cog):
     async def bedlam(
         interaction: discord.Interaction, character: str, counter: str, new_value: int
     ):
+        # Validate that new_value is non-negative
+        if new_value < 0:
+            await interaction.response.send_message(
+                "Value must be a non-negative number.", ephemeral=True
+            )
+            return
+
         user_id = str(interaction.user.id)
         character_id = get_character_id_by_user_and_name(user_id, character)
         if character_id is None:
             await handle_character_not_found(interaction)
             return
-
         counters = get_counters_for_character(character_id)
         target = _get_bedlam_counter(counters, counter)
         if not target:
-            await handle_counter_not_found(interaction)
+            await interaction.response.send_message(
+                "No perm_is_maximum_bedlam counter found with that name.", ephemeral=True
+            )
             return
 
-        # Validate the new bedlam value
-        adjusted_value, is_valid = await _validate_new_bedlam_value(
-            target, new_value, interaction
-        )
-        if not is_valid:
+        # Check if bedlam would exceed perm
+        if new_value > target.perm:
+            await interaction.response.send_message(
+                "Bedlam cannot be greater than perm for this counter type.", ephemeral=True
+            )
             return
 
-        # Update the bedlam value
-        target.bedlam = adjusted_value
-        updated_counters = update_counter_in_db(
-            character_id, counter, "bedlam", target.bedlam, target
-        )
-
-        # Generate response message
-        msg = generate_counters_output(updated_counters, fully_unescape)
-        await interaction.response.send_message(
-            f"Bedlam for counter '{counter}' on character '{character}' set to {new_value}.\n"
-            f"Counters for character '{character}':\n{msg}",
-            ephemeral=True,
+        await _handle_counter_update(
+            interaction,
+            character,
+            counter,
+            target,
+            "bedlam",
+            new_value,
+            lambda: _update_counter_in_mongodb(
+                character_id, counter, "bedlam", target.bedlam
+            ),
         )
 
     @cog.avct_group.command(

@@ -203,6 +203,7 @@ def add_counter(
     force_unpretty: bool = False,
     is_resettable: bool = None,
     is_exhaustible: bool = None,
+    bedlam: int = 0
 ):
     # Prevent empty or whitespace-only counter names
     if counter_name is None or str(counter_name).strip() == "":
@@ -276,7 +277,7 @@ def add_counter(
         return False, "A counter with that name exists for this character."
 
     # Set temp/perm/bedlam according to type and value
-    temp, perm, bedlam = None, None, None
+    temp, perm, bedlam_value = None, None, None
     if counter_type == CounterTypeEnum.single_number.value:
         temp = value
         perm = value
@@ -286,7 +287,10 @@ def add_counter(
     elif counter_type == CounterTypeEnum.perm_is_maximum_bedlam.value:
         temp = value
         perm = value
-        bedlam = 0
+        bedlam_value = bedlam if bedlam is not None else 0
+        # Check if bedlam would exceed perm
+        if bedlam_value > value:
+            return False, "Bedlam cannot be greater than perm for this counter type."
     elif counter_type == CounterTypeEnum.perm_not_maximum.value:
         # For rage and banality, temp and perm both set to value
         if counter_name_sanitized.lower() in ["rage", "banality"]:
@@ -299,23 +303,31 @@ def add_counter(
         temp = 0
         perm = value
 
-    new_counter = Counter(
-        counter_name_sanitized,
-        temp,
-        perm,
-        category_sanitized,
-        comment_sanitized,
-        bedlam=bedlam if bedlam is not None else 0,
-        counter_type=counter_type,
-        force_unpretty=force_unpretty,
-        is_resettable=is_resettable,
-        is_exhaustible=is_exhaustible,
-    ).__dict__
-    counters.append(new_counter)
-    CharacterRepository.update_one(
-        {"_id": char_doc["_id"]}, {"$set": {"counters": counters}}
-    )
-    return True, None
+    try:
+        new_counter = Counter(
+            counter_name_sanitized,
+            temp,
+            perm,
+            category_sanitized,
+            comment_sanitized,
+            bedlam=bedlam_value if bedlam_value is not None else 0,
+            counter_type=counter_type,
+            force_unpretty=force_unpretty,
+            is_resettable=is_resettable,
+            is_exhaustible=is_exhaustible,
+        )
+
+        # Check if there was a bedlam error
+        if hasattr(new_counter, 'bedlam_error') and new_counter.bedlam_error:
+            return False, new_counter.bedlam_error
+
+        counters.append(new_counter.__dict__)
+        CharacterRepository.update_one(
+            {"_id": char_doc["_id"]}, {"$set": {"counters": counters}}
+        )
+        return True, None
+    except ValueError as e:
+        return False, str(e)
 
 
 def update_counter(character_id: str, counter_name: str, field: str, delta: int):
@@ -366,7 +378,14 @@ def update_counter(character_id: str, counter_name: str, field: str, delta: int)
                 new_perm = c["perm"] + delta
                 if new_perm < 0:
                     return False, "Perm cannot be below zero."
-                if counter_type == "perm_is_maximum":
+
+                # For perm_is_maximum_bedlam, ensure perm doesn't go below bedlam
+                if counter_type == "perm_is_maximum_bedlam":
+                    if new_perm < c.get("bedlam", 0):
+                        return False, f"Perm cannot be set below bedlam ({c.get('bedlam', 0)})."
+                    c["perm"] = new_perm
+                    c["temp"] = min(c["temp"], new_perm)
+                elif counter_type == "perm_is_maximum":
                     c["perm"] = new_perm
                     c["temp"] = min(c["temp"], new_perm)
                 elif counter_type == "single_number":
@@ -374,9 +393,6 @@ def update_counter(character_id: str, counter_name: str, field: str, delta: int)
                     c["temp"] = (
                         new_perm  # Always set temp to match perm for single_number
                     )
-                elif counter_type == "perm_is_maximum_bedlam":
-                    c["perm"] = new_perm
-                    c["temp"] = min(c["temp"], new_perm)
                 else:
                     c["perm"] = new_perm
             CharacterRepository.update_one(

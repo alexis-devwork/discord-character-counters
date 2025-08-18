@@ -383,6 +383,13 @@ def register_edit_commands(cog):
     async def plus_cmd(
         interaction: discord.Interaction, character: str, counter: str, points: int = 1
     ):
+        # Validate that points is a positive number
+        if points <= 0:
+            await interaction.response.send_message(
+                "Points must be a positive number.", ephemeral=True
+            )
+            return
+
         user_id = str(interaction.user.id)
         character_id = get_character_id_by_user_and_name(user_id, character)
         if character_id is None:
@@ -447,6 +454,13 @@ def register_edit_commands(cog):
     async def minus_cmd(
         interaction: discord.Interaction, character: str, counter: str, points: int = 1
     ):
+        # Validate that points is a positive number
+        if points <= 0:
+            await interaction.response.send_message(
+                "Points must be a positive number.", ephemeral=True
+            )
+            return
+
         user_id = str(interaction.user.id)
         character_id = get_character_id_by_user_and_name(user_id, character)
         if character_id is None:
@@ -481,17 +495,17 @@ def register_edit_commands(cog):
                 )
             return
 
-        # --- FIX: Handle Reset_Eligible (perm_is_maximum with is_resettable) ---
-        if target.counter_type == CounterTypeEnum.perm_is_maximum.value and getattr(
-            target, "is_resettable", False
-        ):
-            # Decrement temp, but do not allow below zero
-            new_temp = max(target.temp - points, 0)
-            target.temp = new_temp
-            # Save to DB
-            counters = update_counter_in_db(
-                character_id, counter, "temp", target.temp, target
-            )
+        # For single_number counters, check if value would go below zero
+        if target.counter_type == CounterTypeEnum.single_number.value:
+            if (target.temp - points) < 0:
+                await interaction.response.send_message(
+                    "Cannot set temp below zero.", ephemeral=True
+                )
+                return
+            # Safe to proceed, update both temp and perm
+            target.temp -= points
+            target.perm = target.temp
+            counters = update_counter_in_db(character_id, counter, "temp", target.temp, target)
             msg = generate_counters_output(counters, fully_unescape)
             await interaction.response.send_message(
                 f"Removed {points} point(s) from counter '{counter}' on character '{character}'.\n"
@@ -500,12 +514,14 @@ def register_edit_commands(cog):
             )
             return
 
-        # For single_number counters, update both temp and perm
-        if target.counter_type == CounterTypeEnum.single_number.value:
-            # Do not allow below zero
+        # --- FIX: Handle Reset_Eligible (perm_is_maximum with is_resettable) ---
+        if target.counter_type == CounterTypeEnum.perm_is_maximum.value and getattr(
+            target, "is_resettable", False
+        ):
+            # Decrement temp, but do not allow below zero
             new_temp = max(target.temp - points, 0)
             target.temp = new_temp
-            target.perm = new_temp
+            # Save to DB
             counters = update_counter_in_db(
                 character_id, counter, "temp", target.temp, target
             )

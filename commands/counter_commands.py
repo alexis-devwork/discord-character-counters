@@ -60,3 +60,4 @@ def register_configav_commands(cog):
             await interaction.response.send_message(
                 error or "Failed to toggle option.", ephemeral=True
             )
+
