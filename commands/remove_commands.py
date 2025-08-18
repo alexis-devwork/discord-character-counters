@@ -6,6 +6,9 @@ from utils import (
     handle_character_not_found,
     handle_invalid_health_type,  # Add this import
     handle_counter_not_found,  # Add this import
+    generate_counters_output,  # Add this import
+    fully_unescape,  # Add this import
+    get_counters_for_character,  # Add this import
 )
 from utils import CharacterRepository
 from bson import ObjectId
@@ -30,11 +33,17 @@ def register_remove_commands(cog):
         user_id = str(interaction.user.id)
         success, error, details = remove_character(user_id, character)
         if success:
-            msg = (
-                f"Character '{character}' removed.\nCounters removed:\n{details}"
-                if details
-                else f"Character '{character}' removed."
-            )
+            # Use generate_counters_output for consistent formatting instead of raw details
+            # If we have detailed counter information, format it properly
+            if details:
+                character_id = get_character_id_by_user_and_name(user_id, character)
+                if character_id:
+                    counters = get_counters_for_character(character_id)
+                    msg = f"Character '{character}' removed.\nCounters removed:\n{generate_counters_output(counters, fully_unescape)}"
+                else:
+                    msg = f"Character '{character}' removed.\nCounters removed:\n{details}"
+            else:
+                msg = f"Character '{character}' removed."
             await interaction.response.send_message(msg, ephemeral=True)
         else:
             await handle_character_not_found(
@@ -60,11 +69,14 @@ def register_remove_commands(cog):
             return
         success, error, details = remove_counter(character_id, counter)
         if success:
-            msg = (
-                f"Counter '{counter}' removed from character '{character}'.\nRemaining counters:\n{details}"
-                if details
-                else f"Counter '{counter}' removed from character '{character}'."
-            )
+            # Use generate_counters_output for consistent formatting
+            if details:
+                # Get the updated counters and use generate_counters_output for formatting
+                counters = get_counters_for_character(character_id)
+                formatted_counters = generate_counters_output(counters, fully_unescape)
+                msg = f"Counter '{counter}' removed from character '{character}'.\nRemaining counters:\n{formatted_counters}"
+            else:
+                msg = f"Counter '{counter}' removed from character '{character}'."
             await interaction.response.send_message(msg, ephemeral=True)
         else:
             await handle_counter_not_found(

@@ -220,7 +220,10 @@ def register_character_commands(cog):
         char_doc = CharacterRepository.find_one({"_id": ObjectId(character_id)})
         health_entries = char_doc.get("health", []) if char_doc else []
         if health_entries:
-            msg += _build_health_output(health_entries)
+            try:
+                msg += _build_health_output(health_entries)
+            except Exception:
+                msg += "\n**Health:**\nCould not display health, invalid values -- remove and re-add health tracker to resolve"
 
         # Set ephemeral based on the public flag (ephemeral=True when public=False)
         await _send_counter_response(interaction, character, msg, public)

@@ -25,6 +25,7 @@ class CounterTypeEnum(enum.Enum):
     perm_is_maximum = "perm_is_maximum"
     perm_is_maximum_bedlam = "perm_is_maximum_bedlam"
     perm_not_maximum = "perm_not_maximum"
+    invalid_counter = "invalid_counter"
 
 
 class PredefinedCounterEnum(enum.Enum):
@@ -52,6 +53,7 @@ class CategoryEnum(enum.Enum):
     items = "items"
     other = "other"
     projects = "projects"
+    invalid = "invalid"
 
 
 class Counter:
@@ -70,11 +72,14 @@ class Counter:
     ):
         # Prevent negative values
         if temp is not None and temp < 0:
-            raise ValueError("temp cannot be below zero")
+            counter_type = "invalid_counter"
+            category = CategoryEnum.invalid.value
         if perm is not None and perm < 0:
-            raise ValueError("perm cannot be below zero")
+            counter_type = "invalid_counter"
+            category = CategoryEnum.invalid.value
         if bedlam is not None and bedlam < 0:
-            raise ValueError("bedlam cannot be below zero")
+            counter_type = "invalid_counter"
+            category = CategoryEnum.invalid.value
         # For single_number type, always keep temp and perm equal
         if counter_type == CounterTypeEnum.single_number.value:
             if temp is not None and perm is not None and temp != perm:
@@ -138,6 +143,28 @@ class Counter:
         )
 
     def generate_display(self, fully_unescape_func, display_pretty):
+        """
+        Generate a text representation for a counter.
+        If pretty is True, format according to counter_type.
+        """
+        counter_name = (
+            self.counter
+            if not fully_unescape_func
+            else fully_unescape_func(self.counter)
+        )
+
+        # Special handling for invalid_counter type
+        if self.counter_type == "invalid_counter":
+            # Get all object attributes instead of just raw_values
+            all_attrs = vars(self)
+            # Filter out private attributes (those starting with underscore)
+            filtered_attrs = {
+                k: v for k, v in all_attrs.items() if not k.startswith("_")
+            }
+            values_str = ", ".join([f"{k}: {v}" for k, v in filtered_attrs.items()])
+            return f"{counter_name} [INVALID COUNTER] - Values: {values_str}\nRemove and re-create counter to fix"
+
+        # Force unpretty display if requested
         if getattr(self, "force_unpretty", False):
             return self.generate_display_basic(fully_unescape_func)
         if display_pretty:
@@ -261,7 +288,25 @@ class CounterFactory:
         """
         Create a Counter object from a dictionary.
         """
-        return Counter.from_dict(data)
+        try:
+            return Counter.from_dict(data)
+        except Exception:
+            # On exception, create an invalid_counter type
+            counter_type = data.get("counter_type", "unknown")
+            invalid_counter = Counter(
+                counter=data.get("counter", "Unknown Counter"),
+                temp=data.get("temp", 0),
+                perm=data.get("perm", 0),
+                category=data.get("category", "invalid"),
+                comment=f"Invalid values for type {counter_type}",
+                bedlam=data.get("bedlam", 0),
+                counter_type="invalid_counter",
+                force_unpretty=data.get("force_unpretty", False),
+                is_resettable=data.get("is_resettable", False),
+                is_exhaustible=data.get("is_exhaustible", False),
+            )
+            # No need to set raw_values since we're displaying all attributes
+            return invalid_counter
 
     @staticmethod
     def create(counter_type, perm, comment=None, override_name=None):
